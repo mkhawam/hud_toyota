@@ -1,6 +1,8 @@
 import { Show, type Component } from "solid-js";
+import { Dynamic } from "solid-js/web";
 import { useTopic } from "../core/topics";
 import { tempUnit } from "../core/config";
+import { weatherIcon } from "./icons";
 
 const STALE_MIN = 30;
 
@@ -31,7 +33,10 @@ export const Weather: Component = () => {
   return (
     <Show when={w()}>
       <div class="widget weather" classList={{ stale: ageMin() > STALE_MIN }}>
-        <div class="weather-temp">{temp()}</div>
+        <div class="weather-row">
+          <Dynamic component={weatherIcon(w()!.code)} />
+          <span class="weather-temp">{temp()}</span>
+        </div>
         <div class="weather-label">{label(w()!.code)}</div>
         <Show when={ageMin() > STALE_MIN}>
           <div class="weather-age">{Math.round(ageMin())}m ago</div>

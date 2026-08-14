@@ -1,5 +1,6 @@
 import { For, Show, type Component } from "solid-js";
 import { useTopic } from "../core/topics";
+import { WarnIcon } from "./icons";
 
 export const Alerts: Component = () => {
   const alerts = useTopic("alerts.active");
@@ -11,7 +12,8 @@ export const Alerts: Component = () => {
         <For each={sorted()}>
           {(a) => (
             <div class="alert" classList={{ critical: a.level === "critical" }}>
-              {a.message}
+              <WarnIcon />
+              <span>{a.message}</span>
             </div>
           )}
         </For>

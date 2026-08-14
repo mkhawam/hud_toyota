@@ -6,10 +6,13 @@
   box-sizing: border-box;
 }
 
+@import "../assets/fonts.css";
+
 body {
   background: #0b0f12;
   color: #dfe9ef;
-  font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+  font-family: "Rajdhani", "Segoe UI", system-ui, -apple-system, sans-serif;
+  font-weight: 500;
 }
 
 .settings {
