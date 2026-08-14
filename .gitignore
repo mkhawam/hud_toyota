@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+.pytest_cache/
+
+# Node / frontend
+node_modules/
+web/dist/
+
+# Local state
+cache/
+*.log
+.env
+.shots/
+# auto-saved projection calibration + settings-page overlay
+config/display.yaml
+config/local.yaml
+# drive logs + speed-limit DB
+data/

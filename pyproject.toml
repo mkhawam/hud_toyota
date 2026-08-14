@@ -1,0 +1,38 @@
+[project]
+name = "hud-toyota"
+version = "0.1.0"
+description = "Windshield-projected HUD for a Toyota Camry, hosted on a Raspberry Pi"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+    "pyyaml>=6.0",
+    "httpx>=0.27",
+]
+
+[project.optional-dependencies]
+# Installed on the Pi only — not needed for desktop dev with the sim source.
+vehicle = [
+    "obd>=0.7.2",        # ELM327 fallback path
+    "python-can>=4.4",   # SocketCAN
+    "cantools>=39.0",    # DBC decode
+]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.24",
+]
+# Dev PC only — scripts/build_speedlimits.py. Never installed on the Pi.
+osm = [
+    "osmium>=3.7",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["hud*"]
