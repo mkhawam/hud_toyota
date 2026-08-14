@@ -1,0 +1,127 @@
+# HUD configuration — served verbatim at /api/config; the frontend reads
+# mirror/units/layout from here so display changes never require a rebuild.
+
+server:
+  host: 0.0.0.0
+  port: 8000
+
+# Windshield reflection flips the image; the frontend applies scaleX(-1)
+# when true. Override per-browser with ?mirror=0 / ?mirror=1 for dev.
+mirror: true
+
+# Projection viewport: the HUD renders inside a box of this aspect ratio,
+# scaled/positioned on the physical panel to line up with the reflective
+# patch on the windshield (everything outside the box stays pure black).
+# Calibrate live from the driver's seat: press "c" (or ?cal=1) — arrows
+# move, +/- scale, "s" saves. Saved values land in config/display.yaml,
+# which overrides this section, so hand-edits here stay intact.
+display:
+  aspect: "3:1"   # e.g. 21x7 reflective strip; null = fill the whole panel
+  scale: 1.0      # 1.0 = box at max size that fits the panel
+  offset_x: 0.0   # -1..1 — fraction of panel width, + moves right
+  offset_y: 0.0   # -1..1 — fraction of panel height, + moves down
+
+units:
+  speed: mph        # mph | kph
+  temp: f           # f | c
+
+# Fallback location when there is no GPS fix (weather/traffic queries).
+location:
+  lat: 40.4862    # New Brunswick, NJ — set to your home area
+  lon: -74.4518
+
+providers:
+  system:
+    enabled: true         # net.online probe + Pi CPU temp
+  trip:
+    enabled: true         # trip computer (economy/distance/0-60)
+    reset_hours: 6        # parked this long → new trip (best 0-60 kept)
+  weather:
+    enabled: true         # Open-Meteo, no API key needed
+    poll_minutes: 10
+  gps:
+    enabled: false        # enable on the Pi with a USB GPS + gpsd
+    host: localhost
+    port: 2947
+  traffic:
+    enabled: false        # needs a free TomTom API key
+    tomtom_key: null
+    poll_minutes: 5
+  speedlimit:
+    enabled: false        # needs gps + data/speedlimits-nj.sqlite
+                          # (build once: python scripts/build_speedlimits.py <nj.osm.pbf> -o data/speedlimits-nj.sqlite)
+    db: data/speedlimits-nj.sqlite
+    # defaults_mph: { residential: 25, motorway: 65 }  # override NJ statutory fallbacks
+  vehicle:
+    source: sim     # sim | auto | can | elm327   (auto = CAN fast + ELM327 slow/fallback)
+    elm327:
+      port: null    # null → autoscan; on the Pi the udev rule pins /dev/ttyOBD
+    can:
+      channel: can0
+      dbc: dbc/toyota_2017_ref_pt.dbc
+      # channel → DBC message/signal (opendbc toyota_2017_ref_pt names).
+      # 0xB4 VSC1S03.SP1 = speed (0.01 km/h), 0x1C4 ENG1F07.NE1 = rpm.
+      signals:
+        speed_kph: { message: VSC1S03, signal: SP1 }
+        rpm:       { message: ENG1F07, signal: NE1 }
+        # Camera lane lines (stock-cluster fidelity; enum refined on-car)
+        lane_left:  { message: DS12F03, signal: LKAWLSL }
+        lane_right: { message: DS12F03, signal: LKAWLSR }
+        lda_buzzer: { message: DS12F03, signal: LDWBZ }
+        # Road Sign Assist (camera-read speed signs; TSS 2.5+ only — silent on TSS-P)
+        rsa_sign:   { message: FCM1S10, signal: TSGN1 }
+        rsa_value:  { message: FCM1S10, signal: SPDVAL1 }
+        rsa_unit:   { message: FCM1S11, signal: SPDUNT }
+        # Blind spot monitor (side encoding of BSD_STAT refined on-car)
+        bsm_status: { message: BSR1S01, signal: BSD_STAT }
+        bsm_buzzer: { message: BSR1S01, signal: BSD_BUZ }
+        # Lights / cruise / brake / PCS (HLLI polarity + CACC meaning: confirm on-car)
+        lights_on:  { message: AFS1S01, signal: HLLI }
+        cruise_on:  { message: ENG2F05, signal: CCSF }
+        cruise_set: { message: ACC1S03, signal: CACC }
+        brake_on:   { message: VSC1S07, signal: BRKON }
+        brake_hold: { message: ACC1F01, signal: BRKHLD }
+        pcs_warn:   { message: ACC1F01, signal: PCSWAR }
+        # Temps + odometer + steering
+        trans_temp_c:  { message: ECT1S92, signal: BV_THOCL }
+        intake_temp_c: { message: ENG1F07, signal: THA1 }
+        odometer_km:   { message: MET1S02_21, signal: ODO }   # 29-bit meter frame — may not broadcast
+        steer_deg:     { message: STR1S01, signal: SSA }
+      # PRND comes as separate bit signals in the transmission message.
+      gear:
+        message: ECT1S92
+        bits: { P: B_P, R: B_R, N: B_N, D: B_D }
+
+# Drive logging: 1 Hz telemetry per drive, reviewable at /trips.
+# With overlayfs enabled, point data_dir at a writable mount (USB stick).
+drivelog:
+  enabled: true
+  data_dir: data
+  keep_days: 90
+  idle_end_s: 600   # engine silent this long → drive over
+
+# Widget grid: 3 columns × 3 rows. Widgets register by name in the frontend.
+layout:
+  - { widget: clock,   slot: top-left }
+  - { widget: speed,   slot: center }
+  - { widget: rpm,     slot: bottom-center }
+  - { widget: coolant, slot: bottom-left }
+  - { widget: fuel,    slot: bottom-right }
+  - { widget: alerts,  slot: top-center }
+  - { widget: source,  slot: top-right }
+  - { widget: weather, slot: center-right }
+  - { widget: traffic, slot: center-left }
+  - { widget: dtc,     slot: center-left }
+  - { widget: trip,    slot: bottom-left }
+  - { widget: zerosixty, slot: center-left }
+  - { widget: lanes,   slot: bottom-center }
+  - { widget: cruise,  slot: center-right }
+
+alerts:
+  rules:
+    - { topic: vehicle.coolant_c, above: 110, level: critical, message: "COOLANT HOT" }
+    - { topic: vehicle.rpm,       above: 5800, level: warn,    message: "HIGH RPM" }
+    - { topic: vehicle.battery_v, below: 12.0, level: warn,    message: "BATTERY LOW" }
+    - { topic: vehicle.fuel_pct,  below: 10,   level: warn,    message: "LOW FUEL" }
+    # Overspeed vs the current road (enable with providers.speedlimit):
+    # - { topic: vehicle.speed_kph, above_topic: road.speed_limit_kph, tolerance: 8, level: warn, message: "OVERSPEED" }
