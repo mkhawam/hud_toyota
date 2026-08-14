@@ -1,0 +1,161 @@
+/* Phone settings page — dark, plain, big touch targets. */
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  background: #0b0f12;
+  color: #dfe9ef;
+  font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+}
+
+.settings {
+  max-width: 560px;
+  margin: 0 auto;
+  padding: 16px 12px 48px;
+}
+
+h1 {
+  font-size: 22px;
+  font-weight: 600;
+  margin: 8px 4px 16px;
+  color: #35e0ff;
+}
+
+.card {
+  background: #131a20;
+  border: 1px solid #223039;
+  border-radius: 10px;
+  padding: 14px;
+  margin-bottom: 14px;
+}
+
+.card h2 {
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #7fa0b0;
+  margin-bottom: 12px;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+}
+
+.row label {
+  color: #9db4c0;
+  font-size: 14px;
+  min-width: 40px;
+}
+
+.grow {
+  flex: 1;
+}
+
+input,
+select,
+button {
+  font: inherit;
+  color: inherit;
+  background: #0b1116;
+  border: 1px solid #2c3e4a;
+  border-radius: 8px;
+  padding: 10px 12px;
+  min-height: 44px;
+}
+
+input[type="checkbox"] {
+  width: 26px;
+  height: 26px;
+  min-height: 0;
+  accent-color: #35e0ff;
+}
+
+input[type="number"] {
+  width: 110px;
+}
+
+.seg {
+  display: flex;
+  gap: 0;
+}
+
+.seg button {
+  border-radius: 0;
+  min-width: 72px;
+}
+
+.seg button:first-child {
+  border-radius: 8px 0 0 8px;
+}
+
+.seg button:last-child {
+  border-radius: 0 8px 8px 0;
+}
+
+.seg button.active {
+  background: #35e0ff;
+  color: #06222b;
+  border-color: #35e0ff;
+  font-weight: 600;
+}
+
+.rule {
+  border-top: 1px solid #1d2a33;
+  padding-top: 10px;
+  margin-top: 4px;
+}
+
+.add {
+  width: 100%;
+  border-style: dashed;
+  color: #7fa0b0;
+  margin-top: 4px;
+}
+
+.remove {
+  min-width: 44px;
+  color: #ff6b62;
+}
+
+.card-footer {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 10px;
+}
+
+.save {
+  background: #35e0ff;
+  color: #06222b;
+  font-weight: 600;
+  border: none;
+  min-width: 110px;
+}
+
+.save:disabled {
+  opacity: 0.5;
+}
+
+.ok {
+  color: #4cd964;
+}
+
+.err {
+  color: #ff6b62;
+  font-size: 13px;
+}
+
+.hint {
+  color: #62798a;
+  font-size: 13px;
+  margin: 8px 4px;
+}

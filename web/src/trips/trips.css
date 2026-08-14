@@ -1,0 +1,160 @@
+/* Drives review page — same dark shell as settings. */
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  background: #0b0f12;
+  color: #dfe9ef;
+  font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+}
+
+.trips {
+  max-width: 780px;
+  margin: 0 auto;
+  padding: 16px 12px 48px;
+}
+
+h1 {
+  font-size: 22px;
+  font-weight: 600;
+  margin: 8px 4px 16px;
+  color: #35e0ff;
+}
+
+h2 {
+  font-size: 15px;
+  font-weight: 600;
+  color: #7fa0b0;
+  margin: 18px 4px 10px;
+}
+
+.empty {
+  color: #62798a;
+  padding: 12px 4px;
+}
+
+/* ---- drive list ---- */
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+}
+
+th {
+  text-align: left;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #62798a;
+  padding: 8px 10px;
+  border-bottom: 1px solid #223039;
+}
+
+td {
+  padding: 10px;
+  border-bottom: 1px solid #16212a;
+  font-size: 14px;
+}
+
+.drive-list tbody tr {
+  cursor: pointer;
+}
+
+.drive-list tbody tr:hover {
+  background: #131a20;
+}
+
+.drive-list tr.selected {
+  background: #16232c;
+}
+
+/* ---- chart ---- */
+
+.chart-wrap {
+  position: relative;
+  background: #0e1419;
+  border: 1px solid #223039;
+  border-radius: 10px;
+  padding: 8px;
+}
+
+.chart {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+.grid {
+  stroke: #1a2630;
+  stroke-width: 1;
+}
+
+.axis {
+  stroke: #2c3e4a;
+  stroke-width: 1;
+}
+
+.tick,
+.series-label text {
+  fill: #62798a;
+  font-size: 11px;
+  font-family: inherit;
+}
+
+.line {
+  fill: none;
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.line.speed {
+  stroke: #0090ad;
+}
+
+.line.limit {
+  stroke: #b57b00;
+  stroke-dasharray: 6 4;
+}
+
+.crosshair {
+  stroke: #2c3e4a;
+  stroke-width: 1;
+}
+
+.dot {
+  fill: #0090ad;
+  stroke: #0b0f12;
+  stroke-width: 2;
+}
+
+.tooltip {
+  position: absolute;
+  top: 10px;
+  left: 12px;
+  background: rgba(8, 12, 15, 0.9);
+  border: 1px solid #2c3e4a;
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 13px;
+  pointer-events: none;
+}
+
+.toggle {
+  margin: 10px 0;
+  font: inherit;
+  color: #7fa0b0;
+  background: none;
+  border: 1px solid #2c3e4a;
+  border-radius: 8px;
+  padding: 8px 14px;
+}
+
+.sample-table {
+  font-size: 13px;
+}
