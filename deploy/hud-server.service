@@ -1,0 +1,15 @@
+# HUD backend — installed by deploy/install.sh (paths/user substituted there)
+[Unit]
+Description=HUD backend server
+After=network.target
+
+[Service]
+Type=simple
+User=__USER__
+WorkingDirectory=__HUD_DIR__
+ExecStart=__HUD_DIR__/.venv/bin/python -m hud --source auto
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

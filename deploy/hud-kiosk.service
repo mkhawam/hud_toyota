@@ -1,0 +1,25 @@
+# Chromium fullscreen inside the cage Wayland compositor, straight on tty1.
+# PAMName+TTY settings are the canonical cage kiosk pattern — no desktop,
+# no login manager, ~10s to pixels.
+[Unit]
+Description=HUD kiosk (Chromium in cage)
+After=hud-server.service systemd-user-sessions.service
+Wants=hud-server.service
+
+[Service]
+User=__USER__
+PAMName=login
+TTYPath=/dev/tty1
+TTYReset=yes
+TTYVHangup=yes
+StandardInput=tty
+StandardOutput=journal
+StandardError=journal
+UtmpIdentifier=tty1
+UtmpMode=user
+Restart=always
+RestartSec=2
+ExecStart=/usr/bin/cage -- __HUD_DIR__/deploy/kiosk.sh
+
+[Install]
+WantedBy=multi-user.target

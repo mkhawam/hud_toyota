@@ -1,0 +1,14 @@
+# Bring up the MCP2515 CAN interface at Toyota's 500 kbit/s.
+# restart-ms recovers the controller automatically after bus-off.
+[Unit]
+Description=CAN0 interface up
+After=multi-user.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/sbin/ip link set can0 up type can bitrate 500000 restart-ms 100
+ExecStop=/sbin/ip link set can0 down
+
+[Install]
+WantedBy=multi-user.target
