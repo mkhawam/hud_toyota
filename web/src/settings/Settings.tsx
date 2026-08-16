@@ -18,8 +18,29 @@ interface AlertRule {
   topic: string;
   above?: number | null;
   below?: number | null;
+  above_topic?: string | null;
+  below_topic?: string | null;
+  tolerance?: number | null;
   level: "warn" | "critical";
   message: string;
+}
+
+/** Compares against another topic (e.g. OVERSPEED vs road.speed_limit_kph). */
+const isTopicRule = (r: AlertRule) => r.above_topic != null || r.below_topic != null;
+
+/** Exactly the fields the API accepts — never round-trip anything extra. */
+function cleanRule(r: AlertRule) {
+  const base = { topic: r.topic, level: r.level, message: r.message };
+  if (isTopicRule(r)) {
+    return {
+      ...base,
+      ...(r.above_topic != null
+        ? { above_topic: r.above_topic }
+        : { below_topic: r.below_topic }),
+      tolerance: r.tolerance ?? 0,
+    };
+  }
+  return { ...base, ...(r.below != null ? { below: r.below } : { above: r.above ?? 0 }) };
 }
 
 async function postSection(section: string, value: unknown): Promise<string | null> {
@@ -160,17 +181,7 @@ const AlertsCard: Component = () => {
     <Card
       title="Alert rules"
       id="alerts"
-      onSave={() =>
-        postSection(
-          "alerts.rules",
-          rules().map((r) => ({
-            topic: r.topic,
-            ...(r.below != null ? { below: r.below } : { above: r.above ?? 0 }),
-            level: r.level,
-            message: r.message,
-          })),
-        )
-      }
+      onSave={() => postSection("alerts.rules", rules().map(cleanRule))}
     >
       <datalist id="topics">
         <For each={[...ALERT_TOPICS]}>{(t) => <option value={t} />}</For>

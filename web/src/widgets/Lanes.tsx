@@ -23,15 +23,8 @@ export const Lanes: Component = () => {
     <Show when={left() !== undefined || right() !== undefined}>
       <div class="widget lanes">
         <svg viewBox="0 0 120 44" class="lanes-svg" aria-label="lane markings">
-          {/* car marker — a small panda, because this car has residents */}
-          <g class="lanes-car">
-            <circle cx="56.6" cy="34.4" r="1.9" />
-            <circle cx="63.4" cy="34.4" r="1.9" />
-            <circle cx="60" cy="38" r="4.6" />
-            <circle cx="58.2" cy="37.2" r="1.05" class="lanes-car-patch" />
-            <circle cx="61.8" cy="37.2" r="1.05" class="lanes-car-patch" />
-            <ellipse cx="60" cy="39.6" rx="0.9" ry="0.7" class="lanes-car-patch" />
-          </g>
+          {/* car marker */}
+          <rect x="55" y="36" width="10" height="6" rx="2" class="lanes-car" />
           {/* left / right lane lines converging toward a vanishing point */}
           <path d="M38 42 L52 4" class="lane-line" classList={cls(left())} />
           <path d="M82 42 L68 4" class="lane-line" classList={cls(right())} />

@@ -458,10 +458,6 @@ body {
   fill: var(--dim);
 }
 
-.lanes-car-patch {
-  fill: var(--bg); /* eye patches + nose punched out of the panda face */
-}
-
 .lane-line {
   fill: none;
   stroke: var(--dim);

@@ -32,7 +32,11 @@ class AlertsEngine(DataProvider):
         # Outer loop re-reads the rules whenever the settings page edits them
         # (config.updated on the bus) — no process restart needed.
         while True:
-            rules: list[dict[str, Any]] = self.config.get("alerts.rules", []) or []
+            # Work on copies: tagging the live config dicts would leak _id
+            # into /api/config and break settings round-trips (extra="forbid").
+            rules: list[dict[str, Any]] = [
+                dict(r) for r in (self.config.get("alerts.rules") or [])
+            ]
             for i, rule in enumerate(rules):
                 rule["_id"] = f"rule{i}"
 
