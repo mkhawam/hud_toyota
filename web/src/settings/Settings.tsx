@@ -14,35 +14,6 @@ const NAV = [
   { id: "debug", label: "Debug" },
 ] as const;
 
-interface AlertRule {
-  topic: string;
-  above?: number | null;
-  below?: number | null;
-  above_topic?: string | null;
-  below_topic?: string | null;
-  tolerance?: number | null;
-  level: "warn" | "critical";
-  message: string;
-}
-
-/** Compares against another topic (e.g. OVERSPEED vs road.speed_limit_kph). */
-const isTopicRule = (r: AlertRule) => r.above_topic != null || r.below_topic != null;
-
-/** Exactly the fields the API accepts — never round-trip anything extra. */
-function cleanRule(r: AlertRule) {
-  const base = { topic: r.topic, level: r.level, message: r.message };
-  if (isTopicRule(r)) {
-    return {
-      ...base,
-      ...(r.above_topic != null
-        ? { above_topic: r.above_topic }
-        : { below_topic: r.below_topic }),
-      tolerance: r.tolerance ?? 0,
-    };
-  }
-  return { ...base, ...(r.below != null ? { below: r.below } : { above: r.above ?? 0 }) };
-}
-
 async function postSection(section: string, value: unknown): Promise<string | null> {
   try {
     const res = await fetch(`/api/settings/${section}`, {
@@ -54,142 +25,347 @@ async function postSection(section: string, value: unknown): Promise<string | nu
     if (body.ok) return null;
     return JSON.stringify(body.errors?.[0]?.msg ?? body.errors?.[0] ?? "save failed");
   } catch {
-    return "network error";
+    return "no connection";
   }
 }
 
-/** Section card with its own save button + status line. */
-const Card: Component<{
-  title: string;
-  id?: string;
-  onSave: () => Promise<string | null>;
-  children: JSX.Element;
-}> = (props) => {
-  const [status, setStatus] = createSignal<"idle" | "saving" | "saved" | string>("idle");
-  const save = async () => {
+/** iOS-style auto-save: debounce writes, surface a quiet status. */
+function autoSaver(section: string) {
+  const [status, setStatus] = createSignal<"idle" | "saving" | "saved" | "error">("idle");
+  const [error, setError] = createSignal("");
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const save = (value: unknown, delay = 450) => {
+    clearTimeout(timer);
     setStatus("saving");
-    const err = await props.onSave();
-    setStatus(err ?? "saved");
-    if (!err) setTimeout(() => setStatus("idle"), 2000);
+    timer = setTimeout(async () => {
+      const err = await postSection(section, value);
+      if (err) {
+        setStatus("error");
+        setError(err);
+      } else {
+        setStatus("saved");
+        setTimeout(() => setStatus((s) => (s === "saved" ? "idle" : s)), 1200);
+      }
+    }, delay);
   };
-  return (
-    <section class="card" id={props.id}>
-      <h2>{props.title}</h2>
-      {props.children}
-      <div class="card-footer">
-        <button class="save" onClick={() => void save()} disabled={status() === "saving"}>
-          Save
-        </button>
-        <Show when={status() === "saved"}>
-          <span class="ok">✓ saved</span>
-        </Show>
-        <Show when={status() !== "idle" && status() !== "saving" && status() !== "saved"}>
-          <span class="err">{status()}</span>
+  onCleanup(() => clearTimeout(timer));
+  return { save, status, error };
+}
+
+/** Grouped inset list: small-caps title above, rounded group, footer below. */
+const Group: Component<{
+  title?: string;
+  id?: string;
+  status?: () => "idle" | "saving" | "saved" | "error";
+  error?: () => string;
+  footer?: string;
+  children: JSX.Element;
+}> = (props) => (
+  <section class="group-wrap" id={props.id}>
+    <Show when={props.title}>
+      <div class="group-title">
+        <span>{props.title}</span>
+        <Show when={props.status}>
+          <span class="group-status" classList={{ show: props.status!() !== "idle" }}>
+            {props.status!() === "error" ? "⚠ not saved" : props.status!() === "saving" ? "…" : "✓ saved"}
+          </span>
         </Show>
       </div>
-    </section>
+    </Show>
+    <div class="group">{props.children}</div>
+    <Show when={props.status?.() === "error" && props.error}>
+      <div class="group-footer error">{props.error!()}</div>
+    </Show>
+    <Show when={props.footer}>
+      <div class="group-footer">{props.footer}</div>
+    </Show>
+  </section>
+);
+
+const Row: Component<{ label?: string; stacked?: boolean; children: JSX.Element }> = (props) => (
+  <div class="ios-row" classList={{ stacked: props.stacked }}>
+    <Show when={props.label}>
+      <span class="row-label">{props.label}</span>
+    </Show>
+    <div class="row-control">{props.children}</div>
+  </div>
+);
+
+const Seg: Component<{
+  options: readonly { value: string; label: string; font?: string }[];
+  value: () => string;
+  onChange: (v: string) => void;
+}> = (props) => (
+  <div class="seg">
+    <For each={[...props.options]}>
+      {(o) => (
+        <button
+          classList={{ active: props.value() === o.value }}
+          style={o.font ? { "font-family": o.font } : undefined}
+          onClick={() => props.onChange(o.value)}
+        >
+          {o.label}
+        </button>
+      )}
+    </For>
+  </div>
+);
+
+// ---- sections -------------------------------------------------------------
+
+const AppearanceGroup: Component = () => {
+  const t = config().theme ?? {};
+  const [theme, setTheme] = createSignal<Required<ThemeConfig>>({
+    accent: t.accent ?? "#3ce0ff",
+    glow: t.glow ?? 0.85,
+    font: t.font ?? "chakra",
+    night_mode: t.night_mode ?? "auto",
+    night_brightness: t.night_brightness ?? 0.55,
+    speed_size: t.speed_size ?? 36,
+    rpm_width: t.rpm_width ?? 44,
+  });
+  const saver = autoSaver("theme");
+  const patch = (p: Partial<ThemeConfig>, delay = 450) => {
+    const merged = { ...theme(), ...p };
+    setTheme(merged);
+    saver.save(merged, delay);
+  };
+
+  return (
+    <>
+      <Group title="Theme presets" id="appearance">
+        <div class="presets">
+          <For each={THEME_PRESETS}>
+            {(p) => (
+              <button
+                class="preset"
+                style={{ "font-family": FONTS[p.theme.font ?? "chakra"].display, color: p.theme.accent }}
+                onClick={() => patch(p.theme, 0)}
+              >
+                <span class="preset-name">{p.name}</span>
+                <span class="preset-hint">{p.hint}</span>
+              </button>
+            )}
+          </For>
+        </div>
+      </Group>
+
+      <Group title="Appearance" status={saver.status} error={saver.error}>
+        <Row label="Font">
+          <Seg
+            options={Object.entries(FONTS).map(([value, f]) => ({ value, label: f.name, font: f.display }))}
+            value={() => theme().font}
+            onChange={(v) => patch({ font: v as FontKey })}
+          />
+        </Row>
+        <Row label="Accent" stacked>
+          <div class="swatches">
+            <For each={[...ACCENT_PRESETS]}>
+              {(p) => (
+                <button
+                  class="swatch"
+                  classList={{ active: theme().accent.toLowerCase() === p.hex }}
+                  style={{ background: p.hex }}
+                  title={p.name}
+                  onClick={() => patch({ accent: p.hex })}
+                />
+              )}
+            </For>
+            <input
+              class="hex"
+              value={theme().accent}
+              maxlength="7"
+              onChange={(e) => patch({ accent: e.currentTarget.value })}
+            />
+          </div>
+        </Row>
+        <Row label="Glow">
+          <input type="range" min="0" max="2" step="0.1" value={theme().glow}
+            onInput={(e) => patch({ glow: Number(e.currentTarget.value) })} />
+          <span class="row-value">{theme().glow.toFixed(1)}</span>
+        </Row>
+        <Row label="Speed size">
+          <input type="range" min="24" max="48" step="1" value={theme().speed_size}
+            onInput={(e) => patch({ speed_size: Number(e.currentTarget.value) })} />
+          <span class="row-value">{theme().speed_size}</span>
+        </Row>
+        <Row label="Gauge width">
+          <input type="range" min="28" max="60" step="1" value={theme().rpm_width}
+            onInput={(e) => patch({ rpm_width: Number(e.currentTarget.value) })} />
+          <span class="row-value">{theme().rpm_width}</span>
+        </Row>
+        <Row label="Night mode">
+          <Seg
+            options={[
+              { value: "auto", label: "Auto" },
+              { value: "on", label: "On" },
+              { value: "off", label: "Off" },
+            ]}
+            value={() => theme().night_mode}
+            onChange={(v) => patch({ night_mode: v as "auto" | "on" | "off" })}
+          />
+        </Row>
+        <Row label="Night dim">
+          <input type="range" min="0.2" max="1" step="0.05" value={theme().night_brightness}
+            onInput={(e) => patch({ night_brightness: Number(e.currentTarget.value) })} />
+          <span class="row-value">{theme().night_brightness.toFixed(2)}</span>
+        </Row>
+      </Group>
+    </>
   );
 };
 
-const UnitsCard: Component = () => {
+const UnitsGroup: Component = () => {
   const [speed, setSpeed] = createSignal(config().units?.speed ?? "mph");
   const [temp, setTemp] = createSignal(config().units?.temp ?? "f");
+  const saver = autoSaver("units");
+  const save = () => saver.save({ speed: speed(), temp: temp() }, 0);
   return (
-    <Card title="Units" id="units" onSave={() => postSection("units", { speed: speed(), temp: temp() })}>
-      <div class="row">
-        <label>Speed</label>
-        <div class="seg">
-          <For each={["mph", "kph"] as const}>
-            {(u) => (
-              <button classList={{ active: speed() === u }} onClick={() => setSpeed(u)}>
-                {u.toUpperCase()}
-              </button>
-            )}
-          </For>
-        </div>
-      </div>
-      <div class="row">
-        <label>Temperature</label>
-        <div class="seg">
-          <For each={["f", "c"] as const}>
-            {(u) => (
-              <button classList={{ active: temp() === u }} onClick={() => setTemp(u)}>
-                °{u.toUpperCase()}
-              </button>
-            )}
-          </For>
-        </div>
-      </div>
-    </Card>
+    <Group title="Units" id="units" status={saver.status} error={saver.error}>
+      <Row label="Speed">
+        <Seg
+          options={[{ value: "mph", label: "MPH" }, { value: "kph", label: "KM/H" }]}
+          value={speed}
+          onChange={(v) => { setSpeed(v as "mph" | "kph"); save(); }}
+        />
+      </Row>
+      <Row label="Temperature">
+        <Seg
+          options={[{ value: "f", label: "°F" }, { value: "c", label: "°C" }]}
+          value={temp}
+          onChange={(v) => { setTemp(v as "f" | "c"); save(); }}
+        />
+      </Row>
+    </Group>
   );
 };
 
-const MirrorCard: Component = () => {
+const ProjectionGroup: Component = () => {
   const [mirror, setMirror] = createSignal(config().mirror ?? true);
+  const saver = autoSaver("mirror");
   return (
-    <Card title="Projection" onSave={() => postSection("mirror", mirror())}>
-      <div class="row">
-        <label>Mirror image (windshield reflection)</label>
+    <Group
+      title="Projection"
+      status={saver.status}
+      error={saver.error}
+      footer="Mirrored for the windshield reflection. Position and scale are calibrated on the HUD itself with the C key."
+    >
+      <Row label="Mirror image">
         <input
           type="checkbox"
           checked={mirror()}
-          onChange={(e) => setMirror(e.currentTarget.checked)}
+          onChange={(e) => { setMirror(e.currentTarget.checked); saver.save(e.currentTarget.checked, 0); }}
         />
-      </div>
-    </Card>
+      </Row>
+    </Group>
   );
 };
 
-const LayoutCard: Component = () => {
+const LayoutGroup: Component = () => {
   const [items, setItems] = createSignal<LayoutItem[]>([...(config().layout ?? [])]);
+  const saver = autoSaver("layout");
+  const commit = (next: LayoutItem[], delay = 700) => {
+    setItems(next);
+    saver.save(next, delay);
+  };
   const update = (i: number, patch: Partial<LayoutItem>) =>
-    setItems(items().map((it, j) => (j === i ? { ...it, ...patch } : it)));
+    commit(items().map((it, j) => (j === i ? { ...it, ...patch } : it)));
   return (
-    <Card title="Widget layout" id="layout" onSave={() => postSection("layout", items())}>
+    <Group title="Widget layout" id="layout" status={saver.status} error={saver.error}>
       <For each={items()}>
         {(item, i) => (
-          <div class="row">
-            <select value={item.widget} onChange={(e) => update(i(), { widget: e.currentTarget.value })}>
-              <For each={[...WIDGET_NAMES]}>{(w) => <option value={w}>{w}</option>}</For>
-            </select>
-            <select value={item.slot} onChange={(e) => update(i(), { slot: e.currentTarget.value })}>
-              <For each={[...SLOTS]}>{(s) => <option value={s}>{s}</option>}</For>
-            </select>
-            <button class="remove" onClick={() => setItems(items().filter((_, j) => j !== i()))}>
-              ✕
-            </button>
+          <div class="ios-row">
+            <div class="row-control layout-row">
+              <select value={item.widget} onChange={(e) => update(i(), { widget: e.currentTarget.value })}>
+                <For each={[...WIDGET_NAMES]}>{(w) => <option value={w}>{w}</option>}</For>
+              </select>
+              <select value={item.slot} onChange={(e) => update(i(), { slot: e.currentTarget.value })}>
+                <For each={[...SLOTS]}>{(s) => <option value={s}>{s}</option>}</For>
+              </select>
+              <button class="remove" onClick={() => commit(items().filter((_, j) => j !== i()), 0)}>
+                ✕
+              </button>
+            </div>
           </div>
         )}
       </For>
-      <button class="add" onClick={() => setItems([...items(), { widget: "clock", slot: "top-left" }])}>
-        + add widget
+      <button class="action-row" onClick={() => commit([...items(), { widget: "clock", slot: "top-left" }], 700)}>
+        Add widget
       </button>
-    </Card>
+    </Group>
   );
 };
 
-const AlertsCard: Component = () => {
+const GaugesGroup: Component = () => {
+  const g = config().gauges ?? {};
+  const [max, setMax] = createSignal(g.rpm_max ?? 7000);
+  const [redline, setRedline] = createSignal(g.rpm_redline ?? 6200);
+  const saver = autoSaver("gauges");
+  const save = () => saver.save({ rpm_max: max(), rpm_redline: redline() });
+  return (
+    <Group title="Gauges" id="gauges" status={saver.status} error={saver.error}>
+      <Row label="RPM range">
+        <input type="number" step="100" value={max()}
+          onChange={(e) => { setMax(Number(e.currentTarget.value)); save(); }} />
+      </Row>
+      <Row label="Redline">
+        <input type="number" step="100" value={redline()}
+          onChange={(e) => { setRedline(Number(e.currentTarget.value)); save(); }} />
+      </Row>
+    </Group>
+  );
+};
+
+interface AlertRule {
+  topic: string;
+  above?: number | null;
+  below?: number | null;
+  above_topic?: string | null;
+  below_topic?: string | null;
+  tolerance?: number | null;
+  level: "warn" | "critical";
+  message: string;
+}
+
+const isTopicRule = (r: AlertRule) => r.above_topic != null || r.below_topic != null;
+
+/** Exactly the fields the API accepts — never round-trip anything extra. */
+function cleanRule(r: AlertRule) {
+  const base = { topic: r.topic, level: r.level, message: r.message };
+  if (isTopicRule(r)) {
+    return {
+      ...base,
+      ...(r.above_topic != null ? { above_topic: r.above_topic } : { below_topic: r.below_topic }),
+      tolerance: r.tolerance ?? 0,
+    };
+  }
+  return { ...base, ...(r.below != null ? { below: r.below } : { above: r.above ?? 0 }) };
+}
+
+const AlertsGroup: Component = () => {
   const initial = (config() as { alerts?: { rules?: AlertRule[] } }).alerts?.rules ?? [];
   const [rules, setRules] = createSignal<AlertRule[]>(initial.map((r) => ({ ...r })));
+  const saver = autoSaver("alerts.rules");
+  const commit = (next: AlertRule[], delay = 700) => {
+    setRules(next);
+    saver.save(next.map(cleanRule), delay);
+  };
   const update = (i: number, patch: Partial<AlertRule>) =>
-    setRules(rules().map((r, j) => (j === i ? { ...r, ...patch } : r)));
+    commit(rules().map((r, j) => (j === i ? { ...r, ...patch } : r)));
   const condOf = (r: AlertRule) => (r.below != null ? "below" : "above");
   const valueOf = (r: AlertRule) => r.below ?? r.above ?? 0;
   const setCond = (i: number, cond: string, value: number) =>
     update(i, cond === "below" ? { below: value, above: null } : { above: value, below: null });
+
   return (
-    <Card
-      title="Alert rules"
-      id="alerts"
-      onSave={() => postSection("alerts.rules", rules().map(cleanRule))}
-    >
+    <Group title="Alerts" id="alerts" status={saver.status} error={saver.error}>
       <datalist id="topics">
         <For each={[...ALERT_TOPICS]}>{(t) => <option value={t} />}</For>
       </datalist>
       <For each={rules()}>
         {(rule, i) => (
-          <div class="rule">
-            <div class="row">
+          <div class="ios-row stacked rule">
+            <div class="row-control rule-line">
               <input
                 class="grow"
                 list="topics"
@@ -197,23 +373,29 @@ const AlertsCard: Component = () => {
                 placeholder="topic"
                 onChange={(e) => update(i(), { topic: e.currentTarget.value })}
               />
-              <button class="remove" onClick={() => setRules(rules().filter((_, j) => j !== i()))}>
+              <button class="remove" onClick={() => commit(rules().filter((_, j) => j !== i()), 0)}>
                 ✕
               </button>
             </div>
-            <div class="row">
-              <select
-                value={condOf(rule)}
-                onChange={(e) => setCond(i(), e.currentTarget.value, valueOf(rule))}
+            <div class="row-control rule-line">
+              <Show
+                when={!isTopicRule(rule)}
+                fallback={
+                  <span class="rule-ref">
+                    vs {rule.above_topic ?? rule.below_topic} +{rule.tolerance ?? 0}
+                  </span>
+                }
               >
-                <option value="above">above</option>
-                <option value="below">below</option>
-              </select>
-              <input
-                type="number"
-                value={valueOf(rule)}
-                onChange={(e) => setCond(i(), condOf(rule), Number(e.currentTarget.value))}
-              />
+                <select value={condOf(rule)} onChange={(e) => setCond(i(), e.currentTarget.value, valueOf(rule))}>
+                  <option value="above">above</option>
+                  <option value="below">below</option>
+                </select>
+                <input
+                  type="number"
+                  value={valueOf(rule)}
+                  onChange={(e) => setCond(i(), condOf(rule), Number(e.currentTarget.value))}
+                />
+              </Show>
               <select
                 value={rule.level}
                 onChange={(e) => update(i(), { level: e.currentTarget.value as AlertRule["level"] })}
@@ -222,7 +404,7 @@ const AlertsCard: Component = () => {
                 <option value="critical">critical</option>
               </select>
             </div>
-            <div class="row">
+            <div class="row-control rule-line">
               <input
                 class="grow"
                 value={rule.message}
@@ -235,21 +417,23 @@ const AlertsCard: Component = () => {
         )}
       </For>
       <button
-        class="add"
+        class="action-row"
         onClick={() =>
-          setRules([...rules(), { topic: "vehicle.coolant_c", above: 110, level: "warn", message: "ALERT" }])
+          commit([...rules(), { topic: "vehicle.coolant_c", above: 110, level: "warn", message: "ALERT" }], 700)
         }
       >
-        + add rule
+        Add alert rule
       </button>
-    </Card>
+    </Group>
   );
 };
 
-const LocationCard: Component = () => {
+const LocationGroup: Component = () => {
   const loc = (config() as { location?: { lat?: number; lon?: number } }).location ?? {};
   const [lat, setLat] = createSignal(loc.lat ?? 40.4862);
   const [lon, setLon] = createSignal(loc.lon ?? -74.4518);
+  const saver = autoSaver("location");
+  const save = () => saver.save({ lat: lat(), lon: lon() });
   const useGps = async () => {
     const res = await fetch("/api/snapshot?pattern=gps.position");
     const snap = await res.json();
@@ -257,175 +441,45 @@ const LocationCard: Component = () => {
     if (fix) {
       setLat(fix.lat);
       setLon(fix.lon);
+      saver.save({ lat: fix.lat, lon: fix.lon }, 0);
     }
   };
   return (
-    <Card title="Home location" id="location" onSave={() => postSection("location", { lat: lat(), lon: lon() })}>
-      <div class="row">
-        <label>Lat</label>
-        <input type="number" step="0.0001" value={lat()} onChange={(e) => setLat(Number(e.currentTarget.value))} />
-        <label>Lon</label>
-        <input type="number" step="0.0001" value={lon()} onChange={(e) => setLon(Number(e.currentTarget.value))} />
-      </div>
-      <button class="add" onClick={() => void useGps()}>
-        use current GPS position
+    <Group
+      title="Home location"
+      id="location"
+      status={saver.status}
+      error={saver.error}
+      footer="Used for weather and speed limits until there is a GPS fix."
+    >
+      <Row label="Latitude">
+        <input type="number" step="0.0001" value={lat()}
+          onChange={(e) => { setLat(Number(e.currentTarget.value)); save(); }} />
+      </Row>
+      <Row label="Longitude">
+        <input type="number" step="0.0001" value={lon()}
+          onChange={(e) => { setLon(Number(e.currentTarget.value)); save(); }} />
+      </Row>
+      <button class="action-row" onClick={() => void useGps()}>
+        Use Current GPS Position
       </button>
-    </Card>
+    </Group>
   );
 };
 
-const Slider: Component<{
-  label: string;
-  min: number;
-  max: number;
-  step: number;
-  value: number;
-  onInput: (v: number) => void;
-  suffix?: string;
-}> = (props) => (
-  <div class="row">
-    <label>{props.label}</label>
-    <input
-      type="range"
-      class="grow"
-      min={props.min}
-      max={props.max}
-      step={props.step}
-      value={props.value}
-      onInput={(e) => props.onInput(Number(e.currentTarget.value))}
-    />
-    <span class="slider-val">
-      {props.value}
-      {props.suffix ?? ""}
-    </span>
-  </div>
-);
-
-const AppearanceCard: Component = () => {
-  const t = config().theme ?? {};
-  const [theme, setTheme] = createSignal<Required<ThemeConfig>>({
-    accent: t.accent ?? "#3ce0ff",
-    glow: t.glow ?? 0.85,
-    font: t.font ?? "chakra",
-    night_mode: t.night_mode ?? "auto",
-    night_brightness: t.night_brightness ?? 0.55,
-    speed_size: t.speed_size ?? 36,
-    rpm_width: t.rpm_width ?? 44,
-  });
-  const patch = (p: Partial<ThemeConfig>) => setTheme({ ...theme(), ...p });
-
-  const [presetStatus, setPresetStatus] = createSignal("");
-  const applyPreset = async (name: string, p: ThemeConfig) => {
-    const merged = { ...theme(), ...p };
-    setTheme(merged);
-    const err = await postSection("theme", merged);
-    setPresetStatus(err ?? `${name} applied`);
-    setTimeout(() => setPresetStatus(""), 2000);
+const TripGroup: Component = () => {
+  const [status, setStatus] = createSignal("");
+  const reset = async () => {
+    await fetch("/api/trip/reset", { method: "POST" });
+    setStatus("Trip reset");
+    setTimeout(() => setStatus(""), 2000);
   };
-
   return (
-    <Card title="Appearance" id="appearance" onSave={() => postSection("theme", theme())}>
-      {/* one-tap skins — apply + save immediately */}
-      <div class="presets">
-        <For each={THEME_PRESETS}>
-          {(p) => (
-            <button
-              class="preset"
-              style={{
-                "font-family": FONTS[p.theme.font ?? "chakra"].display,
-                color: p.theme.accent,
-                "border-color": p.theme.accent + "55",
-              }}
-              onClick={() => void applyPreset(p.name, p.theme)}
-            >
-              <span class="preset-name">{p.name}</span>
-              <span class="preset-hint">{p.hint}</span>
-            </button>
-          )}
-        </For>
-      </div>
-      <Show when={presetStatus()}>
-        <p class="ok">✓ {presetStatus()}</p>
-      </Show>
-
-      <div class="row">
-        <label>Font</label>
-        <div class="seg">
-          <For each={Object.entries(FONTS)}>
-            {([key, f]) => (
-              <button
-                classList={{ active: theme().font === key }}
-                style={{ "font-family": f.display }}
-                onClick={() => patch({ font: key as FontKey })}
-              >
-                {f.name}
-              </button>
-            )}
-          </For>
-        </div>
-      </div>
-
-      <div class="row">
-        <label>Accent</label>
-        <div class="swatches">
-          <For each={[...ACCENT_PRESETS]}>
-            {(p) => (
-              <div class="swatch-item">
-                <button
-                  class="swatch"
-                  classList={{ active: theme().accent.toLowerCase() === p.hex }}
-                  style={{ background: p.hex }}
-                  onClick={() => patch({ accent: p.hex })}
-                />
-                <span class="swatch-name">{p.name}</span>
-              </div>
-            )}
-          </For>
-          <input
-            class="hex"
-            value={theme().accent}
-            maxlength="7"
-            onChange={(e) => patch({ accent: e.currentTarget.value })}
-          />
-        </div>
-      </div>
-      <Slider label="Glow" min={0} max={2} step={0.1} value={theme().glow}
-        onInput={(v) => patch({ glow: v })} />
-      <Slider label="Speed size" min={24} max={48} step={1} value={theme().speed_size}
-        onInput={(v) => patch({ speed_size: v })} />
-      <Slider label="RPM width" min={28} max={60} step={1} value={theme().rpm_width}
-        onInput={(v) => patch({ rpm_width: v })} />
-      <div class="row">
-        <label>Night mode</label>
-        <div class="seg">
-          <For each={["auto", "on", "off"] as const}>
-            {(m) => (
-              <button classList={{ active: theme().night_mode === m }} onClick={() => patch({ night_mode: m })}>
-                {m.toUpperCase()}
-              </button>
-            )}
-          </For>
-        </div>
-      </div>
-      <Slider label="Night dim" min={0.2} max={1} step={0.05} value={theme().night_brightness}
-        onInput={(v) => patch({ night_brightness: v })} />
-    </Card>
-  );
-};
-
-const GaugesCard: Component = () => {
-  const g = config().gauges ?? {};
-  const [max, setMax] = createSignal(g.rpm_max ?? 7000);
-  const [redline, setRedline] = createSignal(g.rpm_redline ?? 6200);
-  return (
-    <Card title="Gauges" id="gauges" onSave={() => postSection("gauges", { rpm_max: max(), rpm_redline: redline() })}>
-      <div class="row">
-        <label>RPM max</label>
-        <input type="number" step="100" value={max()} onChange={(e) => setMax(Number(e.currentTarget.value))} />
-        <label>Redline</label>
-        <input type="number" step="100" value={redline()} onChange={(e) => setRedline(Number(e.currentTarget.value))} />
-      </div>
-    </Card>
+    <Group title="Trip computer" id="trip" footer={status() || "Distance, fuel, and timers restart from zero."}>
+      <button class="action-row destructive" onClick={() => void reset()}>
+        Reset Trip Data
+      </button>
+    </Group>
   );
 };
 
@@ -434,11 +488,11 @@ interface DebugInfo {
   topics: Record<string, { value: unknown; age_s: number }>;
 }
 
-const DebugCard: Component = () => {
+const DebugGroup: Component = () => {
   const [overlay, setOverlay] = createSignal(config().debug ?? false);
   const [info, setInfo] = createSignal<DebugInfo | null>(null);
   const [watching, setWatching] = createSignal(false);
-  const [status, setStatus] = createSignal("");
+  const saver = autoSaver("debug");
 
   let timer: ReturnType<typeof setInterval> | undefined;
   const poll = async () => {
@@ -459,68 +513,40 @@ const DebugCard: Component = () => {
   };
   onCleanup(() => clearInterval(timer));
 
-  const saveOverlay = async (on: boolean) => {
-    setOverlay(on);
-    const err = await postSection("debug", on);
-    setStatus(err ?? "saved");
-    setTimeout(() => setStatus(""), 1500);
-  };
-
   const fmt = (v: unknown) => {
     const s = typeof v === "object" ? JSON.stringify(v) : String(v);
     return s.length > 42 ? s.slice(0, 41) + "…" : s;
   };
 
   return (
-    <section class="card" id="debug">
-      <h2>Debug</h2>
-      <div class="row">
-        <label>Debug overlay on the HUD</label>
-        <input type="checkbox" checked={overlay()} onChange={(e) => void saveOverlay(e.currentTarget.checked)} />
-        <Show when={status()}>
-          <span class="ok">✓ {status()}</span>
-        </Show>
-      </div>
-      <button class="add" onClick={toggleWatch}>
-        {watching() ? "stop watching" : "watch live topics"}
+    <Group title="Debug" id="debug" status={saver.status} error={saver.error}
+      footer="The overlay also toggles with the D key on the HUD.">
+      <Row label="HUD debug overlay">
+        <input type="checkbox" checked={overlay()}
+          onChange={(e) => { setOverlay(e.currentTarget.checked); saver.save(e.currentTarget.checked, 0); }} />
+      </Row>
+      <button class="action-row" onClick={toggleWatch}>
+        {watching() ? "Stop Watching Topics" : "Watch Live Topics"}
       </button>
       <Show when={watching() && info()}>
-        <p class="hint">uptime {Math.round(info()!.uptime_s)}s · {Object.keys(info()!.topics).length} topics</p>
-        <div class="debug-table">
-          <For each={Object.entries(info()!.topics)}>
-            {([name, t]) => (
-              <div class="debug-row" classList={{ stale: t.age_s > 10 }}>
-                <span class="debug-topic">{name}</span>
-                <span class="debug-value">{fmt(t.value)}</span>
-                <span class="debug-age">{t.age_s < 2 ? "" : `${Math.round(t.age_s)}s`}</span>
-              </div>
-            )}
-          </For>
+        <div class="ios-row stacked">
+          <div class="row-control">
+            <span class="rule-ref">uptime {Math.round(info()!.uptime_s)}s · {Object.keys(info()!.topics).length} topics</span>
+          </div>
+          <div class="debug-table">
+            <For each={Object.entries(info()!.topics)}>
+              {([name, t]) => (
+                <div class="debug-row" classList={{ stale: t.age_s > 10 }}>
+                  <span class="debug-topic">{name}</span>
+                  <span class="debug-value">{fmt(t.value)}</span>
+                  <span class="debug-age">{t.age_s < 2 ? "" : `${Math.round(t.age_s)}s`}</span>
+                </div>
+              )}
+            </For>
+          </div>
         </div>
       </Show>
-    </section>
-  );
-};
-
-const TripCard: Component = () => {
-  const [status, setStatus] = createSignal("");
-  const reset = async () => {
-    await fetch("/api/trip/reset", { method: "POST" });
-    setStatus("trip reset");
-    setTimeout(() => setStatus(""), 2000);
-  };
-  return (
-    <section class="card" id="trip">
-      <h2>Trip computer</h2>
-      <div class="row">
-        <button class="grow" onClick={() => void reset()}>
-          Reset trip (distance / fuel / time)
-        </button>
-        <Show when={status()}>
-          <span class="ok">✓ {status()}</span>
-        </Show>
-      </div>
-    </section>
+    </Group>
   );
 };
 
@@ -532,18 +558,14 @@ export const Settings: Component = () => (
         <For each={[...NAV]}>{(n) => <a href={`#${n.id}`}>{n.label}</a>}</For>
       </nav>
     </header>
-    <AppearanceCard />
-    <UnitsCard />
-    <MirrorCard />
-    <GaugesCard />
-    <LayoutCard />
-    <AlertsCard />
-    <LocationCard />
-    <TripCard />
-    <DebugCard />
-    <p class="hint">
-      Changes apply to the HUD live. Display position/scale is easier to calibrate on the HUD
-      itself: press <b>C</b> with a keyboard attached.
-    </p>
+    <AppearanceGroup />
+    <UnitsGroup />
+    <ProjectionGroup />
+    <LayoutGroup />
+    <GaugesGroup />
+    <AlertsGroup />
+    <LocationGroup />
+    <TripGroup />
+    <DebugGroup />
   </main>
 );
