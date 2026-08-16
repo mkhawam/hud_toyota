@@ -37,6 +37,7 @@ export interface Topics {
   "vehicle.intake_temp_c": number;
   "vehicle.odometer_km": number;
   "vehicle.steer_deg": number;
+  "vehicle.power_kw": number;
   // Full active set on every change — last-value semantics mean new/reconnecting
   // clients are always primed with the current alerts, not a partial event stream.
   "alerts.active": { id: string; level: "warn" | "critical"; message: string }[];

@@ -16,6 +16,7 @@ import { SpeedLimit } from "./SpeedLimit";
 import { Lanes } from "./Lanes";
 import { Cruise } from "./Cruise";
 import { IntakeTemp, TransTemp } from "./TempStats";
+import { Power } from "./Power";
 
 registerWidget("speed", Speed);
 registerWidget("rpm", Rpm);
@@ -34,3 +35,4 @@ registerWidget("lanes", Lanes);
 registerWidget("cruise", Cruise);
 registerWidget("transtemp", TransTemp);
 registerWidget("intaketemp", IntakeTemp);
+registerWidget("power", Power);

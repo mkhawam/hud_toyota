@@ -198,6 +198,33 @@ body {
   fill: #3b2023;
 }
 
+/* hybrid power meter (shares the rpm gauge chassis) */
+
+.seg-chg {
+  fill: #3cff9d;
+  filter: drop-shadow(0 0 2px rgba(60, 255, 157, 0.5));
+}
+
+.power-zero {
+  fill: var(--dim);
+}
+
+.power-side {
+  font-size: 1.8cqh;
+  font-weight: 600;
+  letter-spacing: 0.2em;
+  color: var(--dim);
+}
+
+.power-side.pwr {
+  color: var(--crit);
+  opacity: 0.75;
+}
+
+.power-regen {
+  color: #3cff9d;
+}
+
 .rpm-info {
   margin-top: 1cqh;
   display: flex;

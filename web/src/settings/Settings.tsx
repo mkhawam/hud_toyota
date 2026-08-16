@@ -300,10 +300,37 @@ const GaugesGroup: Component = () => {
   const g = config().gauges ?? {};
   const [max, setMax] = createSignal(g.rpm_max ?? 7000);
   const [redline, setRedline] = createSignal(g.rpm_redline ?? 6200);
+  const [pMax, setPMax] = createSignal(g.power_max_kw ?? 150);
+  const [pRegen, setPRegen] = createSignal(g.power_regen_kw ?? 50);
   const saver = autoSaver("gauges");
-  const save = () => saver.save({ rpm_max: max(), rpm_redline: redline() });
+  const save = () =>
+    saver.save({ rpm_max: max(), rpm_redline: redline(), power_max_kw: pMax(), power_regen_kw: pRegen() });
+
+  // Hybrid: the center meter can be the tach or the CHG/ECO/PWR power
+  // gauge — switching just rewrites the layout entry.
+  const layoutSaver = autoSaver("layout");
+  const initialGauge = () =>
+    (config().layout ?? []).some((i) => i.widget === "power") ? "power" : "rpm";
+  const [gauge, setGauge] = createSignal(initialGauge());
+  const switchGauge = (to: string) => {
+    setGauge(to);
+    const items = [...(config().layout ?? [])];
+    const idx = items.findIndex((i) => i.widget === "rpm" || i.widget === "power");
+    if (idx === -1) items.push({ widget: to, slot: "bottom-center" });
+    else items[idx] = { ...items[idx], widget: to };
+    layoutSaver.save(items, 0);
+  };
+
   return (
-    <Group title="Gauges" id="gauges" status={saver.status} error={saver.error}>
+    <Group title="Gauges" id="gauges" status={saver.status} error={saver.error}
+      footer="Power shows the hybrid CHG / PWR meter; the kW value needs the HV CAN mapping (sim provides it on the desk).">
+      <Row label="Center gauge">
+        <Seg
+          options={[{ value: "rpm", label: "RPM" }, { value: "power", label: "Power" }]}
+          value={gauge}
+          onChange={switchGauge}
+        />
+      </Row>
       <Row label="RPM range">
         <input type="number" step="100" value={max()}
           onChange={(e) => { setMax(Number(e.currentTarget.value)); save(); }} />
@@ -311,6 +338,14 @@ const GaugesGroup: Component = () => {
       <Row label="Redline">
         <input type="number" step="100" value={redline()}
           onChange={(e) => { setRedline(Number(e.currentTarget.value)); save(); }} />
+      </Row>
+      <Row label="Power max kW">
+        <input type="number" step="5" value={pMax()}
+          onChange={(e) => { setPMax(Number(e.currentTarget.value)); save(); }} />
+      </Row>
+      <Row label="Regen max kW">
+        <input type="number" step="5" value={pRegen()}
+          onChange={(e) => { setPRegen(Number(e.currentTarget.value)); save(); }} />
       </Row>
     </Group>
   );
@@ -550,11 +585,14 @@ const DebugGroup: Component = () => {
   );
 };
 
-export const Settings: Component = () => (
+export const Settings: Component<{ backUrl?: string | null }> = (props) => (
   <main class="settings">
     <header class="topbar">
       <h1>HUD Settings</h1>
       <nav class="topnav">
+        <Show when={props.backUrl != null}>
+          <a class="back" href={props.backUrl!}>← HUD</a>
+        </Show>
         <For each={[...NAV]}>{(n) => <a href={`#${n.id}`}>{n.label}</a>}</For>
       </nav>
     </header>

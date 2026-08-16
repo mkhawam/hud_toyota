@@ -65,6 +65,8 @@ class Theme(_Strict):
 class Gauges(_Strict):
     rpm_max: float = Field(default=7000, ge=3000, le=12000)
     rpm_redline: float = Field(default=6200, ge=2000, le=12000)
+    power_max_kw: float = Field(default=150, ge=20, le=500)   # hybrid PWR end
+    power_regen_kw: float = Field(default=50, ge=5, le=200)   # CHG end (magnitude)
 
     @model_validator(mode="after")
     def _redline_below_max(self) -> "Gauges":

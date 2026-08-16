@@ -77,6 +77,14 @@ class SimVehicleSource(VehicleSource):
             # MAF roughly tracks rpm and load; idles ~3 g/s, WOT ~80+ g/s
             load = 0.8 if accelerating else 0.25
             self.emit("maf_gs", round(3.0 + rpm / 6500 * 90 * load, 1))
+            # hybrid power: positive under acceleration, regen while slowing
+            if accelerating:
+                power = 15 + (rpm / 6500) * 110
+            elif target < speed - 0.5 and speed > 5:
+                power = -min(45.0, speed * 0.35)  # regen braking
+            else:
+                power = 4 + speed * 0.08  # cruise draw
+            self.emit("power_kw", round(power, 1))
             if gear != last_gear:
                 self.emit("gear", "P" if speed < 0.5 and target == 0 else f"D{gear}")
                 last_gear = gear

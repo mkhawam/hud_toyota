@@ -20,7 +20,12 @@ export interface HudConfig {
   layout?: LayoutItem[];
   display?: DisplayConfig;
   theme?: import("./theme").ThemeConfig;
-  gauges?: { rpm_max?: number; rpm_redline?: number };
+  gauges?: {
+    rpm_max?: number;
+    rpm_redline?: number;
+    power_max_kw?: number;
+    power_regen_kw?: number;
+  };
   debug?: boolean;
 }
 

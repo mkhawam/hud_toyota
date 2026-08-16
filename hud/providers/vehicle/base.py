@@ -43,6 +43,7 @@ CHANNELS = (
     "intake_temp_c", # float: intake air temp
     "odometer_km",   # float: odometer (29-bit meter frame, speculative)
     "steer_deg",     # float: steering angle
+    "power_kw",      # float: hybrid system power, negative = regen
 )
 
 

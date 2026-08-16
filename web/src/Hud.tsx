@@ -94,6 +94,12 @@ export const Hud: Component = () => {
   const onKey = (ev: KeyboardEvent) => {
     if (ev.key === "c" || ev.key === "C") return setCal(!cal());
     if (ev.key === "d" || ev.key === "D") return setDebugLocal(!debugOn());
+    if (ev.key === "Enter" && !cal()) {
+      // OK on the panel opens settings (arrow/OK navigable); it carries the
+      // current query so Back returns to the same HUD view.
+      location.assign(`/settings/?hud=1&return=${encodeURIComponent(location.search)}`);
+      return;
+    }
     if (!cal()) return;
     const step = ev.shiftKey ? NUDGE_BIG : NUDGE;
     const cur = disp();

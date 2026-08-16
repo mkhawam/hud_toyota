@@ -38,6 +38,8 @@ theme:
 gauges:
   rpm_max: 7000
   rpm_redline: 6200
+  power_max_kw: 150     # hybrid power meter PWR end (Camry Hybrid ~155 kW system)
+  power_regen_kw: 50    # CHG (regen) end magnitude
 
 # Debug overlay on the HUD (also toggled with the D key or ?debug=1).
 debug: false
@@ -104,6 +106,9 @@ providers:
         intake_temp_c: { message: ENG1F07, signal: THA1 }
         odometer_km:   { message: MET1S02_21, signal: ODO }   # 29-bit meter frame — may not broadcast
         steer_deg:     { message: STR1S01, signal: SSA }
+        # power_kw: hybrid HV battery frames are platform-specific and not in
+        # this DBC — find them on-car (candump while accelerating/regenning)
+        # and map here; until then the power gauge shows sim/absent.
       # PRND comes as separate bit signals in the transmission message.
       gear:
         message: ECT1S92

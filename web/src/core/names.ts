@@ -21,6 +21,7 @@ export const WIDGET_NAMES = [
   "cruise",
   "transtemp",
   "intaketemp",
+  "power",
 ] as const;
 
 export const SLOTS = [

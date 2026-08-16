@@ -90,6 +90,24 @@ h1 {
   background: var(--inset);
 }
 
+.topnav a.back {
+  background: var(--tint);
+  color: var(--tint-ink);
+  font-weight: 700;
+}
+
+/* ---- panel (arrow/OK) navigation focus states ---- */
+
+body.panel-nav :focus {
+  outline: 3px solid var(--tint);
+  outline-offset: 2px;
+  border-radius: 10px;
+}
+
+body.panel-nav.editing :focus {
+  outline-color: var(--good); /* green ring = editing, OK confirms */
+}
+
 /* ---- grouped lists ---- */
 
 .group-wrap {
