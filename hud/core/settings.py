@@ -52,6 +52,26 @@ class Display(_Strict):
     offset_y: float = Field(default=0.0, ge=-1, le=1)
 
 
+class Theme(_Strict):
+    accent: str = Field(default="#3ce0ff", pattern=r"^#[0-9a-fA-F]{6}$")
+    glow: float = Field(default=1.0, ge=0.0, le=2.0)
+    night_mode: Literal["auto", "on", "off"] = "auto"
+    night_brightness: float = Field(default=0.55, ge=0.2, le=1.0)
+    speed_size: float = Field(default=36, ge=24, le=48)   # digit height, cqh
+    rpm_width: float = Field(default=44, ge=28, le=60)    # gauge width, cqw
+
+
+class Gauges(_Strict):
+    rpm_max: float = Field(default=7000, ge=3000, le=12000)
+    rpm_redline: float = Field(default=6200, ge=2000, le=12000)
+
+    @model_validator(mode="after")
+    def _redline_below_max(self) -> "Gauges":
+        if self.rpm_redline >= self.rpm_max:
+            raise ValueError("rpm_redline must be below rpm_max")
+        return self
+
+
 class AlertRule(_Strict):
     topic: str = Field(pattern=r"^[a-z0-9_]+(\.[a-z0-9_]+)+$")
     above: Optional[float] = None
@@ -87,4 +107,7 @@ SECTIONS: dict[str, Callable[[Any], Any]] = {
     "alerts.rules": _validate_rules,
     "location": lambda v: Location.model_validate(v).model_dump(),
     "display": lambda v: Display.model_validate(v).model_dump(),
+    "theme": lambda v: Theme.model_validate(v).model_dump(),
+    "gauges": lambda v: Gauges.model_validate(v).model_dump(),
+    "debug": lambda v: TypeAdapter(bool).validate_python(v),
 }

@@ -100,9 +100,25 @@ export function useTopic(topic: string): Accessor<unknown> {
   return entry(topic).get;
 }
 
+// ---- debug bookkeeping ----------------------------------------------------
+
+const lastUpdate = new Map<string, number>();
+const [topicIndex, setTopicIndex] = createSignal<string[]>([]);
+export { topicIndex };
+
+export function topicAgeMs(topic: string, nowMs: number): number | null {
+  const t = lastUpdate.get(topic);
+  return t === undefined ? null : nowMs - t;
+}
+
 /** Apply a server batch: { topic: [value, ts] }. */
 export function applyBatch(topics: Record<string, [unknown, number]>): void {
+  const now = Date.now();
+  let grew = false;
   for (const [topic, [value]] of Object.entries(topics)) {
+    if (!lastUpdate.has(topic)) grew = true;
+    lastUpdate.set(topic, now);
     entry(topic).set(value);
   }
+  if (grew) setTopicIndex([...lastUpdate.keys()].sort());
 }

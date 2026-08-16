@@ -70,3 +70,39 @@ def test_mirror_scalar_section(tmp_path):
     client, config, *_ = make_client(tmp_path)
     assert client.post("/api/settings/mirror", json=False).status_code == 200
     assert config.get("mirror") is False
+
+
+def test_theme_roundtrip_and_validation(tmp_path):
+    client, config, *_ = make_client(tmp_path)
+    theme = {"accent": "#3cff9d", "glow": 1.4, "night_mode": "on",
+             "night_brightness": 0.4, "speed_size": 40, "rpm_width": 50}
+    r = client.post("/api/settings/theme", json=theme)
+    assert r.status_code == 200
+    assert config.get("theme.accent") == "#3cff9d"
+
+    assert client.post("/api/settings/theme", json={"accent": "green"}).status_code == 422
+    assert client.post("/api/settings/theme", json={"glow": 9}).status_code == 422
+    assert client.post("/api/settings/theme", json={"night_mode": "dusk"}).status_code == 422
+
+
+def test_gauges_redline_must_be_below_max(tmp_path):
+    client, config, *_ = make_client(tmp_path)
+    ok = client.post("/api/settings/gauges", json={"rpm_max": 8000, "rpm_redline": 7200})
+    assert ok.status_code == 200
+    assert config.get("gauges.rpm_max") == 8000
+
+    bad = client.post("/api/settings/gauges", json={"rpm_max": 6000, "rpm_redline": 6500})
+    assert bad.status_code == 422
+    assert config.get("gauges.rpm_max") == 8000  # unchanged
+
+
+def test_debug_toggle_and_endpoint(tmp_path):
+    client, config, bus, _ = make_client(tmp_path)
+    assert client.post("/api/settings/debug", json=True).status_code == 200
+    assert config.get("debug") is True
+
+    bus.publish("vehicle.rpm", 3000)
+    info = client.get("/api/debug").json()
+    assert info["uptime_s"] >= 0
+    assert info["topics"]["vehicle.rpm"]["value"] == 3000
+    assert info["topics"]["vehicle.rpm"]["age_s"] >= 0

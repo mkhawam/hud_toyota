@@ -25,6 +25,22 @@ units:
   speed: mph        # mph | kph
   temp: f           # f | c
 
+# Appearance — all editable live from the phone settings page (/settings).
+theme:
+  accent: "#3ce0ff"     # main HUD color (digits stay white; marks/chips use this)
+  glow: 1.0             # 0 = flat, 2 = heavy bloom
+  night_mode: auto      # auto (headlights/sunset) | on | off
+  night_brightness: 0.55
+  speed_size: 36        # speed digit height (cqh of the projection box)
+  rpm_width: 44         # rpm gauge width (cqw)
+
+gauges:
+  rpm_max: 7000
+  rpm_redline: 6200
+
+# Debug overlay on the HUD (also toggled with the D key or ?debug=1).
+debug: false
+
 # Fallback location when there is no GPS fix (weather/traffic queries).
 location:
   lat: 40.4862    # New Brunswick, NJ — set to your home area

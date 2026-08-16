@@ -14,6 +14,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import time
 from pathlib import Path
 from typing import Any
 
@@ -35,6 +36,7 @@ WEB_DIST = Path(__file__).resolve().parents[1] / "web" / "dist"
 
 def create_app(bus: Bus, config: Config) -> FastAPI:
     app = FastAPI(title="hud-toyota")
+    started = time.time()
 
     @app.get("/api/config")
     async def get_config() -> dict:
@@ -80,6 +82,18 @@ def create_app(bus: Bus, config: Config) -> FastAPI:
     async def trip_reset() -> dict:
         bus.publish("trip.reset", {})
         return {"ok": True}
+
+    @app.get("/api/debug")
+    async def debug_info() -> dict:
+        """Everything the debug views need: uptime + every topic with age."""
+        now = time.time()
+        return {
+            "uptime_s": round(now - started, 1),
+            "topics": {
+                t: {"value": m.value, "age_s": round(now - m.ts, 1)}
+                for t, m in sorted(bus.snapshot().items())
+            },
+        }
 
     def _drive_store():
         from .drivelog.store import DriveStore

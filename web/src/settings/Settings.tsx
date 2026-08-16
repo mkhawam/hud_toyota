@@ -1,6 +1,7 @@
-import { createSignal, For, Show, type Component, type JSX } from "solid-js";
+import { createSignal, For, onCleanup, Show, type Component, type JSX } from "solid-js";
 import { config, type LayoutItem } from "../core/config";
 import { ALERT_TOPICS, SLOTS, WIDGET_NAMES } from "../core/names";
+import { ACCENT_PRESETS, type ThemeConfig } from "../core/theme";
 
 interface AlertRule {
   topic: string;
@@ -249,6 +250,182 @@ const LocationCard: Component = () => {
   );
 };
 
+const Slider: Component<{
+  label: string;
+  min: number;
+  max: number;
+  step: number;
+  value: number;
+  onInput: (v: number) => void;
+  suffix?: string;
+}> = (props) => (
+  <div class="row">
+    <label>{props.label}</label>
+    <input
+      type="range"
+      class="grow"
+      min={props.min}
+      max={props.max}
+      step={props.step}
+      value={props.value}
+      onInput={(e) => props.onInput(Number(e.currentTarget.value))}
+    />
+    <span class="slider-val">
+      {props.value}
+      {props.suffix ?? ""}
+    </span>
+  </div>
+);
+
+const AppearanceCard: Component = () => {
+  const t = config().theme ?? {};
+  const [theme, setTheme] = createSignal<Required<ThemeConfig>>({
+    accent: t.accent ?? "#3ce0ff",
+    glow: t.glow ?? 1.0,
+    night_mode: t.night_mode ?? "auto",
+    night_brightness: t.night_brightness ?? 0.55,
+    speed_size: t.speed_size ?? 36,
+    rpm_width: t.rpm_width ?? 44,
+  });
+  const patch = (p: Partial<ThemeConfig>) => setTheme({ ...theme(), ...p });
+
+  return (
+    <Card title="Appearance" onSave={() => postSection("theme", theme())}>
+      <div class="row">
+        <label>Accent</label>
+        <div class="swatches">
+          <For each={[...ACCENT_PRESETS]}>
+            {(p) => (
+              <button
+                class="swatch"
+                classList={{ active: theme().accent.toLowerCase() === p.hex }}
+                style={{ background: p.hex }}
+                title={p.name}
+                onClick={() => patch({ accent: p.hex })}
+              />
+            )}
+          </For>
+          <input
+            class="hex"
+            value={theme().accent}
+            maxlength="7"
+            onChange={(e) => patch({ accent: e.currentTarget.value })}
+          />
+        </div>
+      </div>
+      <Slider label="Glow" min={0} max={2} step={0.1} value={theme().glow}
+        onInput={(v) => patch({ glow: v })} />
+      <Slider label="Speed size" min={24} max={48} step={1} value={theme().speed_size}
+        onInput={(v) => patch({ speed_size: v })} />
+      <Slider label="RPM width" min={28} max={60} step={1} value={theme().rpm_width}
+        onInput={(v) => patch({ rpm_width: v })} />
+      <div class="row">
+        <label>Night mode</label>
+        <div class="seg">
+          <For each={["auto", "on", "off"] as const}>
+            {(m) => (
+              <button classList={{ active: theme().night_mode === m }} onClick={() => patch({ night_mode: m })}>
+                {m.toUpperCase()}
+              </button>
+            )}
+          </For>
+        </div>
+      </div>
+      <Slider label="Night dim" min={0.2} max={1} step={0.05} value={theme().night_brightness}
+        onInput={(v) => patch({ night_brightness: v })} />
+    </Card>
+  );
+};
+
+const GaugesCard: Component = () => {
+  const g = config().gauges ?? {};
+  const [max, setMax] = createSignal(g.rpm_max ?? 7000);
+  const [redline, setRedline] = createSignal(g.rpm_redline ?? 6200);
+  return (
+    <Card title="Gauges" onSave={() => postSection("gauges", { rpm_max: max(), rpm_redline: redline() })}>
+      <div class="row">
+        <label>RPM max</label>
+        <input type="number" step="100" value={max()} onChange={(e) => setMax(Number(e.currentTarget.value))} />
+        <label>Redline</label>
+        <input type="number" step="100" value={redline()} onChange={(e) => setRedline(Number(e.currentTarget.value))} />
+      </div>
+    </Card>
+  );
+};
+
+interface DebugInfo {
+  uptime_s: number;
+  topics: Record<string, { value: unknown; age_s: number }>;
+}
+
+const DebugCard: Component = () => {
+  const [overlay, setOverlay] = createSignal(config().debug ?? false);
+  const [info, setInfo] = createSignal<DebugInfo | null>(null);
+  const [watching, setWatching] = createSignal(false);
+  const [status, setStatus] = createSignal("");
+
+  let timer: ReturnType<typeof setInterval> | undefined;
+  const poll = async () => {
+    try {
+      setInfo(await (await fetch("/api/debug")).json());
+    } catch {
+      setInfo(null);
+    }
+  };
+  const toggleWatch = () => {
+    setWatching(!watching());
+    if (watching()) {
+      void poll();
+      timer = setInterval(() => void poll(), 2000);
+    } else {
+      clearInterval(timer);
+    }
+  };
+  onCleanup(() => clearInterval(timer));
+
+  const saveOverlay = async (on: boolean) => {
+    setOverlay(on);
+    const err = await postSection("debug", on);
+    setStatus(err ?? "saved");
+    setTimeout(() => setStatus(""), 1500);
+  };
+
+  const fmt = (v: unknown) => {
+    const s = typeof v === "object" ? JSON.stringify(v) : String(v);
+    return s.length > 42 ? s.slice(0, 41) + "…" : s;
+  };
+
+  return (
+    <section class="card">
+      <h2>Debug</h2>
+      <div class="row">
+        <label>Debug overlay on the HUD</label>
+        <input type="checkbox" checked={overlay()} onChange={(e) => void saveOverlay(e.currentTarget.checked)} />
+        <Show when={status()}>
+          <span class="ok">✓ {status()}</span>
+        </Show>
+      </div>
+      <button class="add" onClick={toggleWatch}>
+        {watching() ? "stop watching" : "watch live topics"}
+      </button>
+      <Show when={watching() && info()}>
+        <p class="hint">uptime {Math.round(info()!.uptime_s)}s · {Object.keys(info()!.topics).length} topics</p>
+        <div class="debug-table">
+          <For each={Object.entries(info()!.topics)}>
+            {([name, t]) => (
+              <div class="debug-row" classList={{ stale: t.age_s > 10 }}>
+                <span class="debug-topic">{name}</span>
+                <span class="debug-value">{fmt(t.value)}</span>
+                <span class="debug-age">{t.age_s < 2 ? "" : `${Math.round(t.age_s)}s`}</span>
+              </div>
+            )}
+          </For>
+        </div>
+      </Show>
+    </section>
+  );
+};
+
 const TripCard: Component = () => {
   const [status, setStatus] = createSignal("");
   const reset = async () => {
@@ -274,12 +451,15 @@ const TripCard: Component = () => {
 export const Settings: Component = () => (
   <main class="settings">
     <h1>HUD Settings</h1>
+    <AppearanceCard />
     <UnitsCard />
     <MirrorCard />
+    <GaugesCard />
     <LayoutCard />
     <AlertsCard />
     <LocationCard />
     <TripCard />
+    <DebugCard />
     <p class="hint">
       Changes apply to the HUD live. Display position/scale is easier to calibrate on the HUD
       itself: press <b>C</b> with a keyboard attached.

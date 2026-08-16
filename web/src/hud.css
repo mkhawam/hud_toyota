@@ -78,7 +78,7 @@ body {
 }
 
 .hud.night {
-  filter: brightness(0.55);
+  filter: brightness(var(--night-brightness, 0.55));
 }
 
 .slot {
@@ -120,7 +120,7 @@ body {
 
 .speed-value {
   font-family: var(--font-display);
-  font-size: 36cqh;
+  font-size: var(--speed-size, 36cqh);
   font-weight: 700;
   line-height: 0.92;
   letter-spacing: -0.01em;
@@ -167,7 +167,7 @@ body {
 /* ---- rpm segmented gauge ---- */
 
 .rpm {
-  width: 44cqw;
+  width: var(--rpm-width, 44cqw);
 }
 
 .rpm-gauge {
@@ -178,7 +178,7 @@ body {
 
 .seg {
   fill: var(--accent);
-  filter: drop-shadow(0 0 2px rgba(60, 224, 255, 0.6));
+  filter: drop-shadow(0 0 2px var(--accent-soft, rgba(60, 224, 255, 0.6)));
 }
 
 .seg-off {
@@ -468,14 +468,14 @@ body {
   stroke: var(--accent);
   stroke-dasharray: none;
   opacity: 1;
-  filter: drop-shadow(0 0 4px rgba(60, 224, 255, 0.5));
+  filter: drop-shadow(0 0 4px var(--accent-soft, rgba(60, 224, 255, 0.5)));
 }
 
 .lane-line.alert {
   stroke: var(--warn);
   stroke-dasharray: none;
   opacity: 1;
-  filter: drop-shadow(0 0 6px rgba(255, 179, 0, 0.6));
+  filter: drop-shadow(0 0 6px var(--warn-soft, rgba(255, 179, 0, 0.6)));
   animation: pulse 0.6s ease-in-out infinite;
 }
 
@@ -585,6 +585,78 @@ body {
   padding: 0.6cqh 1.6cqw 0.4cqh;
   border-radius: 0.6cqh;
   animation: pulse 1.2s ease-in-out infinite;
+}
+
+/* ---- debug overlay ---- */
+
+.debug-panel {
+  position: absolute;
+  top: 1cqh;
+  right: 1cqw;
+  bottom: 1cqh;
+  width: 34cqw;
+  display: flex;
+  flex-direction: column;
+  background: rgba(0, 0, 0, 0.88);
+  border: 1px solid var(--faint);
+  border-radius: 0.8cqh;
+  padding: 1cqh;
+  font-family: Consolas, "Cascadia Mono", monospace;
+  font-size: 1.9cqh;
+  text-align: left;
+  color: var(--dim);
+}
+
+.dbg-head {
+  display: flex;
+  gap: 1.5cqw;
+  padding-bottom: 0.6cqh;
+  border-bottom: 1px solid var(--faint);
+  font-weight: 600;
+}
+
+.dbg-head .ok {
+  color: var(--accent);
+}
+
+.dbg-head .bad {
+  color: var(--crit);
+}
+
+.dbg-rows {
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.dbg-row {
+  display: flex;
+  gap: 0.8cqw;
+  line-height: 1.35;
+}
+
+.dbg-row.stale {
+  opacity: 0.45;
+}
+
+.dbg-topic {
+  flex: 0 0 46%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dbg-value {
+  flex: 1;
+  color: var(--fg);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dbg-age {
+  flex: 0 0 3.5cqw;
+  text-align: right;
+  color: var(--faint);
 }
 
 /* ---- calibration mode ---- */

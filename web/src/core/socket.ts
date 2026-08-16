@@ -6,7 +6,8 @@ export type ConnState = "connecting" | "open" | "closed";
 
 const [connState, setConnState] = createSignal<ConnState>("connecting");
 const [lastBatchAt, setLastBatchAt] = createSignal(0);
-export { connState, lastBatchAt };
+const [batchCount, setBatchCount] = createSignal(0); // total since page load — debug rate
+export { batchCount, connState, lastBatchAt };
 
 const RECONNECT_MS = 1000;
 
@@ -21,6 +22,7 @@ export function connect(): void {
     if (msg.type === "batch") {
       applyBatch(msg.topics);
       setLastBatchAt(Date.now());
+      setBatchCount((c) => c + 1);
     }
   };
   ws.onclose = () => {

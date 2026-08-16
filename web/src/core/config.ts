@@ -19,6 +19,9 @@ export interface HudConfig {
   units?: { speed?: "mph" | "kph"; temp?: "f" | "c" };
   layout?: LayoutItem[];
   display?: DisplayConfig;
+  theme?: import("./theme").ThemeConfig;
+  gauges?: { rpm_max?: number; rpm_redline?: number };
+  debug?: boolean;
 }
 
 const [config, setConfig] = createSignal<HudConfig>({});

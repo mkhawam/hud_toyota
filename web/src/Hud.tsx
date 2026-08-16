@@ -3,7 +3,9 @@ import { Dynamic } from "solid-js/web";
 import { aspectRatio, config, mirrored } from "./core/config";
 import { getWidget } from "./core/registry";
 import { connState, lastBatchAt } from "./core/socket";
+import { themeVars } from "./core/theme";
 import { useTopic } from "./core/topics";
+import { DebugOverlay } from "./DebugOverlay";
 import { BlindSpotOverlay } from "./widgets/BlindSpot";
 
 const STALE_MS = 2500;
@@ -38,12 +40,21 @@ const NetOverlay: Component = () => {
 export const Hud: Component = () => {
   const weather = useTopic("weather.current");
   const lights = useTopic("vehicle.lights_on");
-  // Prefer the actual headlight state (CAN) — dims exactly when the lights
-  // come on (tunnels, dusk); weather sunset is the fallback.
+  // night_mode config: on/off force it; auto prefers the actual headlight
+  // state (CAN) and falls back to the weather's sunset flag.
   const night = () => {
+    const mode = config().theme?.night_mode ?? "auto";
+    if (mode !== "auto") return mode === "on";
     if (lights() !== undefined) return lights()! > 0;
     return weather() !== undefined && !weather()!.is_day;
   };
+
+  // Debug overlay: settings-page switch is the base; the D key (or
+  // ?debug=1) locally overrides without touching config.
+  const [debugLocal, setDebugLocal] = createSignal<boolean | null>(
+    new URLSearchParams(location.search).get("debug") === "1" ? true : null,
+  );
+  const debugOn = () => debugLocal() ?? config().debug ?? false;
 
   // Projection calibration — position/scale the content box on the panel
   // so it lands on the windshield's reflective patch.
@@ -82,6 +93,7 @@ export const Hud: Component = () => {
 
   const onKey = (ev: KeyboardEvent) => {
     if (ev.key === "c" || ev.key === "C") return setCal(!cal());
+    if (ev.key === "d" || ev.key === "D") return setDebugLocal(!debugOn());
     if (!cal()) return;
     const step = ev.shiftKey ? NUDGE_BIG : NUDGE;
     const cur = disp();
@@ -108,6 +120,7 @@ export const Hud: Component = () => {
       width: ar ? `min(100vw, calc(100vh * ${ar}))` : "100vw",
       height: ar ? `min(100vh, calc(100vw / ${ar}))` : "100vh",
       transform: `translate(${offset_x * 100}vw, ${offset_y * 100}vh) scale(${scale})`,
+      ...themeVars(config().theme),
     };
   };
 
@@ -139,6 +152,9 @@ export const Hud: Component = () => {
         <StatusOverlay />
         <NetOverlay />
         <BlindSpotOverlay />
+        <Show when={debugOn()}>
+          <DebugOverlay />
+        </Show>
         <Show when={cal()}>
           <div class="cal-frame">
             <div class="cal-info">
