@@ -2,9 +2,10 @@ import { For, Show, type Component } from "solid-js";
 import { useTopic } from "../core/topics";
 import { config } from "../core/config";
 
-const SEGMENTS = 32;
-const SEG_W = 7;
-const SEG_GAP = 2.6;
+// Many thin ticks read sleeker than chunky arcade segments.
+const SEGMENTS = 48;
+const SEG_W = 4;
+const SEG_GAP = 2.4;
 const VIEW_W = SEGMENTS * (SEG_W + SEG_GAP) - SEG_GAP;
 
 /** Segmented tick gauge (EV-cluster style) with the current gear inline.

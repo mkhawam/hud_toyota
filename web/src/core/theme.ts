@@ -12,11 +12,11 @@ export interface ThemeConfig {
 }
 
 export const ACCENT_PRESETS = [
-  { name: "ice", hex: "#3ce0ff" },
-  { name: "green", hex: "#3cff9d" },
-  { name: "white", hex: "#eaf6ff" },
-  { name: "gold", hex: "#ffd23c" },
-  { name: "violet", hex: "#b48cff" },
+  { name: "glacier", hex: "#3ce0ff" },
+  { name: "bulba", hex: "#3cff9d" },
+  { name: "polar", hex: "#eaf6ff" },
+  { name: "pika", hex: "#ffd23c" },
+  { name: "mew", hex: "#b48cff" },
 ] as const;
 
 function rgba(hex: string, alpha: number): string {
@@ -32,7 +32,7 @@ function glowPair(hex: string, intensity: number, tight: number, wide: number): 
 
 export function themeVars(t: ThemeConfig | undefined): Record<string, string> {
   const accent = t?.accent ?? "#3ce0ff";
-  const g = t?.glow ?? 1.0;
+  const g = t?.glow ?? 0.85; // restrained by default — polished, not gamer bloom
   return {
     "--accent": accent,
     "--accent-soft": rgba(accent, Math.min(1, 0.6 * g)),

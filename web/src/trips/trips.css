@@ -1,12 +1,12 @@
 /* Drives review page — same dark shell as settings. */
 
+@import "../assets/fonts.css";
+
 * {
   margin: 0;
   padding: 0;
   box-sizing: border-box;
 }
-
-@import "../assets/fonts.css";
 
 body {
   background: #0b0f12;

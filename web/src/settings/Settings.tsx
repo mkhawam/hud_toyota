@@ -296,13 +296,15 @@ const AppearanceCard: Component = () => {
         <div class="swatches">
           <For each={[...ACCENT_PRESETS]}>
             {(p) => (
-              <button
-                class="swatch"
-                classList={{ active: theme().accent.toLowerCase() === p.hex }}
-                style={{ background: p.hex }}
-                title={p.name}
-                onClick={() => patch({ accent: p.hex })}
-              />
+              <div class="swatch-item">
+                <button
+                  class="swatch"
+                  classList={{ active: theme().accent.toLowerCase() === p.hex }}
+                  style={{ background: p.hex }}
+                  onClick={() => patch({ accent: p.hex })}
+                />
+                <span class="swatch-name">{p.name}</span>
+              </div>
             )}
           </For>
           <input
