@@ -55,6 +55,7 @@ class Display(_Strict):
 class Theme(_Strict):
     accent: str = Field(default="#3ce0ff", pattern=r"^#[0-9a-fA-F]{6}$")
     glow: float = Field(default=0.85, ge=0.0, le=2.0)
+    font: Literal["chakra", "orbit", "mono", "round"] = "chakra"
     night_mode: Literal["auto", "on", "off"] = "auto"
     night_brightness: float = Field(default=0.55, ge=0.2, le=1.0)
     speed_size: float = Field(default=36, ge=24, le=48)   # digit height, cqh

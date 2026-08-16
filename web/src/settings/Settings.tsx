@@ -1,7 +1,18 @@
 import { createSignal, For, onCleanup, Show, type Component, type JSX } from "solid-js";
 import { config, type LayoutItem } from "../core/config";
 import { ALERT_TOPICS, SLOTS, WIDGET_NAMES } from "../core/names";
-import { ACCENT_PRESETS, type ThemeConfig } from "../core/theme";
+import { ACCENT_PRESETS, FONTS, THEME_PRESETS, type FontKey, type ThemeConfig } from "../core/theme";
+
+const NAV = [
+  { id: "appearance", label: "Theme" },
+  { id: "units", label: "Units" },
+  { id: "layout", label: "Layout" },
+  { id: "gauges", label: "Gauges" },
+  { id: "alerts", label: "Alerts" },
+  { id: "location", label: "Location" },
+  { id: "trip", label: "Trip" },
+  { id: "debug", label: "Debug" },
+] as const;
 
 interface AlertRule {
   topic: string;
@@ -29,6 +40,7 @@ async function postSection(section: string, value: unknown): Promise<string | nu
 /** Section card with its own save button + status line. */
 const Card: Component<{
   title: string;
+  id?: string;
   onSave: () => Promise<string | null>;
   children: JSX.Element;
 }> = (props) => {
@@ -40,7 +52,7 @@ const Card: Component<{
     if (!err) setTimeout(() => setStatus("idle"), 2000);
   };
   return (
-    <section class="card">
+    <section class="card" id={props.id}>
       <h2>{props.title}</h2>
       {props.children}
       <div class="card-footer">
@@ -62,7 +74,7 @@ const UnitsCard: Component = () => {
   const [speed, setSpeed] = createSignal(config().units?.speed ?? "mph");
   const [temp, setTemp] = createSignal(config().units?.temp ?? "f");
   return (
-    <Card title="Units" onSave={() => postSection("units", { speed: speed(), temp: temp() })}>
+    <Card title="Units" id="units" onSave={() => postSection("units", { speed: speed(), temp: temp() })}>
       <div class="row">
         <label>Speed</label>
         <div class="seg">
@@ -112,7 +124,7 @@ const LayoutCard: Component = () => {
   const update = (i: number, patch: Partial<LayoutItem>) =>
     setItems(items().map((it, j) => (j === i ? { ...it, ...patch } : it)));
   return (
-    <Card title="Widget layout" onSave={() => postSection("layout", items())}>
+    <Card title="Widget layout" id="layout" onSave={() => postSection("layout", items())}>
       <For each={items()}>
         {(item, i) => (
           <div class="row">
@@ -147,6 +159,7 @@ const AlertsCard: Component = () => {
   return (
     <Card
       title="Alert rules"
+      id="alerts"
       onSave={() =>
         postSection(
           "alerts.rules",
@@ -236,7 +249,7 @@ const LocationCard: Component = () => {
     }
   };
   return (
-    <Card title="Home location" onSave={() => postSection("location", { lat: lat(), lon: lon() })}>
+    <Card title="Home location" id="location" onSave={() => postSection("location", { lat: lat(), lon: lon() })}>
       <div class="row">
         <label>Lat</label>
         <input type="number" step="0.0001" value={lat()} onChange={(e) => setLat(Number(e.currentTarget.value))} />
@@ -281,7 +294,8 @@ const AppearanceCard: Component = () => {
   const t = config().theme ?? {};
   const [theme, setTheme] = createSignal<Required<ThemeConfig>>({
     accent: t.accent ?? "#3ce0ff",
-    glow: t.glow ?? 1.0,
+    glow: t.glow ?? 0.85,
+    font: t.font ?? "chakra",
     night_mode: t.night_mode ?? "auto",
     night_brightness: t.night_brightness ?? 0.55,
     speed_size: t.speed_size ?? 36,
@@ -289,8 +303,57 @@ const AppearanceCard: Component = () => {
   });
   const patch = (p: Partial<ThemeConfig>) => setTheme({ ...theme(), ...p });
 
+  const [presetStatus, setPresetStatus] = createSignal("");
+  const applyPreset = async (name: string, p: ThemeConfig) => {
+    const merged = { ...theme(), ...p };
+    setTheme(merged);
+    const err = await postSection("theme", merged);
+    setPresetStatus(err ?? `${name} applied`);
+    setTimeout(() => setPresetStatus(""), 2000);
+  };
+
   return (
-    <Card title="Appearance" onSave={() => postSection("theme", theme())}>
+    <Card title="Appearance" id="appearance" onSave={() => postSection("theme", theme())}>
+      {/* one-tap skins — apply + save immediately */}
+      <div class="presets">
+        <For each={THEME_PRESETS}>
+          {(p) => (
+            <button
+              class="preset"
+              style={{
+                "font-family": FONTS[p.theme.font ?? "chakra"].display,
+                color: p.theme.accent,
+                "border-color": p.theme.accent + "55",
+              }}
+              onClick={() => void applyPreset(p.name, p.theme)}
+            >
+              <span class="preset-name">{p.name}</span>
+              <span class="preset-hint">{p.hint}</span>
+            </button>
+          )}
+        </For>
+      </div>
+      <Show when={presetStatus()}>
+        <p class="ok">✓ {presetStatus()}</p>
+      </Show>
+
+      <div class="row">
+        <label>Font</label>
+        <div class="seg">
+          <For each={Object.entries(FONTS)}>
+            {([key, f]) => (
+              <button
+                classList={{ active: theme().font === key }}
+                style={{ "font-family": f.display }}
+                onClick={() => patch({ font: key as FontKey })}
+              >
+                {f.name}
+              </button>
+            )}
+          </For>
+        </div>
+      </div>
+
       <div class="row">
         <label>Accent</label>
         <div class="swatches">
@@ -344,7 +407,7 @@ const GaugesCard: Component = () => {
   const [max, setMax] = createSignal(g.rpm_max ?? 7000);
   const [redline, setRedline] = createSignal(g.rpm_redline ?? 6200);
   return (
-    <Card title="Gauges" onSave={() => postSection("gauges", { rpm_max: max(), rpm_redline: redline() })}>
+    <Card title="Gauges" id="gauges" onSave={() => postSection("gauges", { rpm_max: max(), rpm_redline: redline() })}>
       <div class="row">
         <label>RPM max</label>
         <input type="number" step="100" value={max()} onChange={(e) => setMax(Number(e.currentTarget.value))} />
@@ -398,7 +461,7 @@ const DebugCard: Component = () => {
   };
 
   return (
-    <section class="card">
+    <section class="card" id="debug">
       <h2>Debug</h2>
       <div class="row">
         <label>Debug overlay on the HUD</label>
@@ -436,7 +499,7 @@ const TripCard: Component = () => {
     setTimeout(() => setStatus(""), 2000);
   };
   return (
-    <section class="card">
+    <section class="card" id="trip">
       <h2>Trip computer</h2>
       <div class="row">
         <button class="grow" onClick={() => void reset()}>
@@ -452,7 +515,12 @@ const TripCard: Component = () => {
 
 export const Settings: Component = () => (
   <main class="settings">
-    <h1>HUD Settings</h1>
+    <header class="topbar">
+      <h1>HUD Settings</h1>
+      <nav class="topnav">
+        <For each={[...NAV]}>{(n) => <a href={`#${n.id}`}>{n.label}</a>}</For>
+      </nav>
+    </header>
     <AppearanceCard />
     <UnitsCard />
     <MirrorCard />

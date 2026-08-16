@@ -56,6 +56,9 @@ body {
   inset: 0;
   margin: auto;
   container-type: size;
+  /* re-resolve the themable text font inside the viewport's var scope —
+     inheriting body's computed value would pin it to the default */
+  font-family: var(--font-text);
 }
 
 .hud {

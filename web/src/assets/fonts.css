@@ -37,3 +37,26 @@
   font-weight: 700;
   font-display: block;
 }
+
+/* Selectable HUD font packs (theme.font) — variable weight ranges. */
+
+@font-face {
+  font-family: "Orbitron";
+  src: url("./fonts/Orbitron-Variable.ttf") format("truetype");
+  font-weight: 400 900;
+  font-display: block;
+}
+
+@font-face {
+  font-family: "JetBrains Mono";
+  src: url("./fonts/JetBrainsMono-Variable.ttf") format("truetype");
+  font-weight: 100 800;
+  font-display: block;
+}
+
+@font-face {
+  font-family: "Quicksand";
+  src: url("./fonts/Quicksand-Variable.ttf") format("truetype");
+  font-weight: 300 700;
+  font-display: block;
+}
