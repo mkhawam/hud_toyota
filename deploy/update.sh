@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
-# In-place HUD update on the Pi (installed as `hud-update`; also what the
-# GitHub Actions runner calls on every push to main).
+# In-place HUD update on the Pi (installed as `hud-update`; scripts/deploy.sh
+# runs it over ssh from the PC after pushing to GitHub).
 #
 #   sudo hud-update                 # fast-forward the current branch
-#   sudo hud-update --ref <sha>     # deploy an exact commit (CI passes the run's SHA)
+#   sudo hud-update --ref <sha>     # deploy an exact commit
 #   sudo hud-update --ref feature   # switch to a branch
 #   sudo hud-update --force         # rebuild + restart even if already at that ref
 #
 # fetch → checkout → pip → npm build (only if web/ changed) → restart →
 # health check. If the backend doesn't come up, rolls back to the previous
-# commit and exits non-zero so the CI job shows red.
+# commit and exits non-zero.
 set -euo pipefail
 
 HUD_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -36,7 +36,7 @@ HUD_USER="$(stat -c %U "$HUD_DIR")"
 as_user() { sudo -u "$HUD_USER" -H "$@"; }
 log() { printf '[%s] %s\n' "$(date +%H:%M:%S)" "$*"; }
 
-# One update at a time — the runner and a manual run must not interleave.
+# One update at a time — two runs must not interleave.
 exec 9>/run/lock/hud-update.lock
 flock -n 9 || { echo "another hud-update is running" >&2; exit 1; }
 
@@ -50,9 +50,9 @@ as_user git fetch -q --prune origin
 
 # Branch name → track origin/<branch>; anything else → detached at that commit.
 if as_user git show-ref -q --verify "refs/remotes/origin/$REF"; then
-    as_user git checkout -q -B "$REF" "origin/$REF"
+    as_user git checkout -q -f -B "$REF" "origin/$REF"
 else
-    as_user git checkout -q --detach "$REF"
+    as_user git checkout -q -f --detach "$REF"
 fi
 NEW="$(git rev-parse HEAD)"
 

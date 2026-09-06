@@ -7,7 +7,7 @@
 | Raspberry Pi 5 | 2 GB is plenty; add the official Active Cooler — a car dash gets hot |
 | MCP2515 CAN HAT | PiCAN2 (16 MHz osc) or Waveshare (12 MHz) — note which for the overlay |
 | ELM327 USB adapter | OBDLink SX or a genuine-chip v1.5; avoid $5 clones |
-| 5" HDMI display, 800×480, ≥800 nits | lies flat on the dash, faces up |
+| 5" HDMI display, 640×480, ≥800 nits | lies flat on the dash, faces up (layout is resolution-independent) |
 | HUD reflective film | on the windshield above the display |
 | 12 V → 5 V / 5 A buck converter | from an **ignition-switched** fuse via add-a-fuse tap |
 
@@ -31,8 +31,8 @@ Flash **Raspberry Pi OS Lite (64-bit)** with SSH enabled in the imager, then
 on the Pi:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/<you>/hud_toyota/main/deploy/install.sh \
-    | sudo bash -s -- --repo https://github.com/<you>/hud_toyota.git --can-hat pican2
+curl -fsSL https://raw.githubusercontent.com/mkhawam/hud_toyota/main/deploy/install.sh \
+    | sudo bash -s -- --repo https://github.com/mkhawam/hud_toyota.git --can-hat pican2
 ```
 
 [install.sh](install.sh) clones to `/opt/hud`, installs apt packages + Node 22
@@ -45,7 +45,11 @@ Reboot once if it says `config.txt` changed.
 
 Boot flow: `hud-server.service` (backend) → `hud-kiosk.service` (Chromium in
 the cage compositor on tty1, `--incognito` so hard power cuts never leave a
-restore-session prompt).
+restore-session prompt). The full **desktop** image works too: the installer
+detects lightdm and switches the Pi to console boot (`raspi-config` "B1"),
+because a desktop session on tty7 would otherwise own the screen and the
+kiosk would sit at "Timeout waiting session to become active". To get the
+desktop back on the bench: `sudo raspi-config nonint do_boot_behaviour B4`.
 
 ## Updating
 
@@ -55,27 +59,18 @@ Python deps and rebuilds the frontend only when those paths changed,
 restarts the services, health-checks `/api/config`, and **rolls back to the
 previous commit if the backend doesn't come up** — exit code 1 so you know.
 
-**Automatically from GitHub (push to main → deploys in the car):** register
-the Pi as a self-hosted Actions runner once:
+**From the PC over the home network:** commit, then
 
 ```sh
-# GitHub → repo → Settings → Actions → Runners → New self-hosted runner
-# (Linux / ARM64) — copy the token from the config.sh line (valid ~1 h)
-sudo /opt/hud/deploy/install-runner.sh \
-    --repo https://github.com/<you>/hud_toyota --token <REGISTRATION_TOKEN>
+scripts/deploy.sh            # git push → ssh dominus@hud sudo hud-update --ref <branch>
+scripts/deploy.sh --ref main --no-push
 ```
 
-[.github/workflows/deploy.yml](../.github/workflows/deploy.yml) then runs
-tests + the frontend build on GitHub for every push/PR, and for pushes to
-main (or a manual "Run workflow" with a ref) the `deploy` job runs **on the
-Pi** and calls `hud-update --ref <sha>`. The runner only makes outbound
-HTTPS, so it works over the car hotspot/LTE with no port forwarding; a push
-while the car is off is picked up when the Pi next boots online (GitHub
-holds queued jobs ~24 h). A red deploy job means the updater rolled back —
-the old build is still running.
-
-`scripts/deploy.sh pi@host` remains as an rsync fallback for a Pi that has no
-GitHub access at all.
+or simply `ssh dominus@hud sudo hud-update` from PowerShell. The Pi pulls
+from GitHub itself, so this works from any machine on the LAN with an ssh
+key on the Pi (`HUD_HOST=user@host` overrides the default). CI
+([.github/workflows/ci.yml](../.github/workflows/ci.yml)) runs the tests and
+frontend build on every push so a broken commit is visible before you deploy.
 
 ## Verify on the car
 
@@ -120,7 +115,7 @@ and deploy — the Pi never runs the builder:
 ```sh
 pip install -e ".[osm]"       # pyosmium, dev PC only (WSL if the wheel fails)
 python scripts/build_speedlimits.py new-jersey-latest.osm.pbf -o data/speedlimits-nj.sqlite
-scripts/deploy.sh pi@hud.local     # rsyncs data/ along with the code
+scp data/speedlimits-nj.sqlite dominus@hud:/opt/hud/data/   # data/ is gitignored — copy it once
 ```
 
 Then set `providers.gps.enabled: true` and `providers.speedlimit.enabled: true`
@@ -140,11 +135,10 @@ sudo reboot
 
 With overlayfs on, nothing persists between boots — which is fine: the HUD
 is stateless except for `cache/weather.json` (best-effort, it just refetches).
-`hud-update` (and therefore the GitHub deploy job) **refuses to run** while
-overlayfs is active, because the update would look successful and then
-vanish at the next power cut. To update: `sudo raspi-config nonint
-disable_overlayfs`, reboot, `sudo hud-update` (or let the runner deploy),
-then re-enable. Drive logging also needs a writable `drivelog.data_dir`
+`hud-update` **refuses to run** while overlayfs is active, because the update
+would look successful and then vanish at the next power cut. To update:
+`sudo raspi-config nonint disable_overlayfs`, reboot, `sudo hud-update`, then
+re-enable. Drive logging also needs a writable `drivelog.data_dir`
 (USB stick / second partition) under overlayfs.
 
 ## Replaying real CAN logs off-car (any Linux box / WSL2)

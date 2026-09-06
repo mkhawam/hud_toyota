@@ -2,8 +2,8 @@
 # Turnkey Raspberry Pi install for the HUD. Run on a fresh Raspberry Pi OS
 # Lite (64-bit) either straight from GitHub:
 #
-#   curl -fsSL https://raw.githubusercontent.com/<you>/hud_toyota/main/deploy/install.sh \
-#       | sudo bash -s -- --repo https://github.com/<you>/hud_toyota.git --can-hat pican2
+#   curl -fsSL https://raw.githubusercontent.com/mkhawam/hud_toyota/main/deploy/install.sh \
+#       | sudo bash -s -- --repo https://github.com/mkhawam/hud_toyota.git --can-hat pican2
 #
 # or from a checkout:   sudo bash deploy/install.sh [options]
 #
@@ -18,10 +18,11 @@
 #   --no-start        install but don't start services now
 #
 # Idempotent: re-running updates packages/units in place. Later updates go
-# through deploy/update.sh (installed as `hud-update`) or the GitHub runner.
+# through deploy/update.sh (installed as `hud-update`), run over ssh from
+# the PC by scripts/deploy.sh.
 set -euo pipefail
 
-HUD_REPO="${HUD_REPO:-https://github.com/dominusmars/hud_toyota.git}"
+HUD_REPO="${HUD_REPO:-https://github.com/mkhawam/hud_toyota.git}"
 HUD_DIR="/opt/hud"
 BRANCH="main"
 HUD_USER="${SUDO_USER:-pi}"
@@ -119,16 +120,16 @@ for unit in $UNITS; do
         "$HUD_DIR/deploy/$unit.service" > "/etc/systemd/system/$unit.service"
 done
 cp "$HUD_DIR/deploy/can0.service" /etc/systemd/system/
-chmod +x "$HUD_DIR/deploy/kiosk.sh" "$HUD_DIR/deploy/update.sh" "$HUD_DIR/deploy/install-runner.sh"
+chmod +x "$HUD_DIR/deploy/kiosk.sh" "$HUD_DIR/deploy/update.sh"
 systemctl daemon-reload
 # shellcheck disable=SC2086
 systemctl enable -q $UNITS can0
 
-# `hud-update` from anywhere; passwordless for the service user so the
-# GitHub runner (and you) can deploy without a root shell.
+# `hud-update` from anywhere; passwordless for the service user so
+# `ssh hud sudo hud-update` from the PC never stops at a password prompt.
 ln -sf "$HUD_DIR/deploy/update.sh" /usr/local/bin/hud-update
 {
-    echo "$HUD_USER ALL=(root) NOPASSWD: $HUD_DIR/deploy/update.sh"
+    echo "$HUD_USER ALL=(root) NOPASSWD: $HUD_DIR/deploy/update.sh, /usr/local/bin/hud-update"
     echo "$HUD_USER ALL=(root) NOPASSWD: /bin/systemctl restart hud-server, /bin/systemctl restart hud-kiosk, /bin/systemctl status hud-server, /bin/systemctl status hud-kiosk"
 } > /etc/sudoers.d/hud
 chmod 0440 /etc/sudoers.d/hud
@@ -149,11 +150,27 @@ if grep -q "Raspberry Pi 5" /proc/device-tree/model 2>/dev/null; then
     add_boot_line "usb_max_current_enable=1"
 fi
 if [ "$KIOSK" -eq 1 ]; then
-    # Black screen until the HUD appears: no rainbow splash, no kernel
-    # chatter, no blinking console cursor (the kiosk unit owns tty1).
+    # A desktop image (lightdm autologin → labwc on tty7) owns the seat, and
+    # cage on tty1 would time out waiting to become active. Boot to console.
+    if [ "$(systemctl get-default)" = "graphical.target" ] || systemctl is-active -q display-manager 2>/dev/null; then
+        log "desktop image detected — switching to console boot (the HUD kiosk owns the screen)"
+        if command -v raspi-config >/dev/null 2>&1; then
+            raspi-config nonint do_boot_behaviour B1
+        else
+            systemctl set-default multi-user.target
+            systemctl disable lightdm 2>/dev/null || true
+        fi
+        REBOOT_NEEDED=1
+    fi
+    # Black screen until the HUD appears: no rainbow splash, no Plymouth
+    # logo, no kernel chatter, no blinking console cursor.
     add_boot_line "disable_splash=1"
     CMDLINE="$(dirname "$CONFIG_TXT")/cmdline.txt"
     if [ -f "$CMDLINE" ]; then
+        if grep -qw splash "$CMDLINE"; then
+            sed -i "s/ splash//; s/ plymouth.ignore-serial-consoles//" "$CMDLINE"
+            REBOOT_NEEDED=1
+        fi
         for opt in quiet vt.global_cursor_default=0; do
             if ! grep -qw "$opt" "$CMDLINE"; then
                 sed -i "1s/\$/ $opt/" "$CMDLINE"
@@ -200,7 +217,7 @@ Installed $(git -C "$HUD_DIR" rev-parse --short HEAD) at $HUD_DIR (user $HUD_USE
   HUD ......... http://<pi-ip>:8000          (kiosk shows it on tty1)
   settings .... http://<pi-ip>:8000/settings
   drives ...... http://<pi-ip>:8000/trips
-  update ...... sudo hud-update              (or push to main with the runner: deploy/install-runner.sh)
+  update ...... sudo hud-update              (or from the PC: scripts/deploy.sh)
   logs ........ journalctl -u hud-server -f
 
 DONE

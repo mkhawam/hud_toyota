@@ -3,9 +3,11 @@
 # no login manager, ~10s to pixels.
 [Unit]
 Description=HUD kiosk (Chromium in cage)
-After=hud-server.service systemd-user-sessions.service getty@tty1.service
+After=hud-server.service systemd-user-sessions.service getty@tty1.service plymouth-quit-wait.service
 Wants=hud-server.service
 # Take tty1 away from the login prompt — otherwise both fight for the screen.
+# (A desktop display manager would win the seat outright; install.sh switches
+# desktop images to console boot for the same reason.)
 Conflicts=getty@tty1.service
 
 [Service]
