@@ -25,18 +25,57 @@ CAN HAT share the port. Toyota PT bus is 500 kbit/s.
 > at the OBD port. If `candump can0` shows nothing while driving, the HUD
 > still works fully via ELM327 (`--source elm327` or just leave `auto`).
 
-## Software setup
+## Software setup (one command)
 
-1. Flash **Raspberry Pi OS Lite (64-bit)**; enable SSH in the imager.
-2. Copy the repo to the Pi (from the PC: `scripts/deploy.sh pi@raspberrypi.local`,
-   which also builds `web/dist` — the Pi needs no Node).
-3. On the Pi: `sudo bash /opt/hud/deploy/install.sh`
-4. Add the CAN overlay + `usb_max_current_enable=1` to
-   `/boot/firmware/config.txt` (printed by the installer), reboot.
+Flash **Raspberry Pi OS Lite (64-bit)** with SSH enabled in the imager, then
+on the Pi:
 
-Boot flow: `hud-server.service` (backend, `--source auto`) →
-`hud-kiosk.service` (Chromium in the cage compositor on tty1, `--incognito`
-so hard power cuts never leave a restore-session prompt).
+```sh
+curl -fsSL https://raw.githubusercontent.com/<you>/hud_toyota/main/deploy/install.sh \
+    | sudo bash -s -- --repo https://github.com/<you>/hud_toyota.git --can-hat pican2
+```
+
+[install.sh](install.sh) clones to `/opt/hud`, installs apt packages + Node 22
++ the Python venv, builds the frontend, installs the udev rule and systemd
+units, writes the Pi 5 `usb_max_current_enable=1` and the CAN overlay into
+`config.txt`, starts everything, and health-checks the backend. Re-running
+it is safe. Options: `--can-hat pican2|waveshare|none`, `--source
+auto|elm327|can|sim`, `--user`, `--branch`, `--no-kiosk` (headless), `--no-start`.
+Reboot once if it says `config.txt` changed.
+
+Boot flow: `hud-server.service` (backend) → `hud-kiosk.service` (Chromium in
+the cage compositor on tty1, `--incognito` so hard power cuts never leave a
+restore-session prompt).
+
+## Updating
+
+**Manually on the Pi:** `sudo hud-update` (fast-forwards the current
+branch; `--ref <sha|branch>` for a specific target). It fetches, reinstalls
+Python deps and rebuilds the frontend only when those paths changed,
+restarts the services, health-checks `/api/config`, and **rolls back to the
+previous commit if the backend doesn't come up** — exit code 1 so you know.
+
+**Automatically from GitHub (push to main → deploys in the car):** register
+the Pi as a self-hosted Actions runner once:
+
+```sh
+# GitHub → repo → Settings → Actions → Runners → New self-hosted runner
+# (Linux / ARM64) — copy the token from the config.sh line (valid ~1 h)
+sudo /opt/hud/deploy/install-runner.sh \
+    --repo https://github.com/<you>/hud_toyota --token <REGISTRATION_TOKEN>
+```
+
+[.github/workflows/deploy.yml](../.github/workflows/deploy.yml) then runs
+tests + the frontend build on GitHub for every push/PR, and for pushes to
+main (or a manual "Run workflow" with a ref) the `deploy` job runs **on the
+Pi** and calls `hud-update --ref <sha>`. The runner only makes outbound
+HTTPS, so it works over the car hotspot/LTE with no port forwarding; a push
+while the car is off is picked up when the Pi next boots online (GitHub
+holds queued jobs ~24 h). A red deploy job means the updater rolled back —
+the old build is still running.
+
+`scripts/deploy.sh pi@host` remains as an rsync fallback for a Pi that has no
+GitHub access at all.
 
 ## Verify on the car
 
@@ -101,8 +140,12 @@ sudo reboot
 
 With overlayfs on, nothing persists between boots — which is fine: the HUD
 is stateless except for `cache/weather.json` (best-effort, it just refetches).
-To update the software later: `sudo raspi-config nonint disable_overlayfs`,
-reboot, deploy, re-enable.
+`hud-update` (and therefore the GitHub deploy job) **refuses to run** while
+overlayfs is active, because the update would look successful and then
+vanish at the next power cut. To update: `sudo raspi-config nonint
+disable_overlayfs`, reboot, `sudo hud-update` (or let the runner deploy),
+then re-enable. Drive logging also needs a writable `drivelog.data_dir`
+(USB stick / second partition) under overlayfs.
 
 ## Replaying real CAN logs off-car (any Linux box / WSL2)
 

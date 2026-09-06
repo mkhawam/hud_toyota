@@ -46,6 +46,22 @@ cd web && npm run typecheck
 python scripts/ws_check.py            # live WS smoke check against a running server
 ```
 
+## Deploy to the Pi
+
+One command on a fresh Raspberry Pi OS Lite install (clones, builds, installs
+services, writes `config.txt`, starts, health-checks):
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/<you>/hud_toyota/main/deploy/install.sh \
+    | sudo bash -s -- --repo https://github.com/<you>/hud_toyota.git --can-hat pican2
+```
+
+Updates: `sudo hud-update` on the Pi (fetch → build → restart → health check →
+rollback on failure), or register the Pi as a GitHub self-hosted runner with
+`deploy/install-runner.sh` and every push to `main` deploys itself via
+[.github/workflows/deploy.yml](.github/workflows/deploy.yml). Details in
+[deploy/README.md](deploy/README.md).
+
 ## Configuration — `config/hud.yaml`
 
 Mirroring, units (mph/°F), widget layout, and alert rules — served at
