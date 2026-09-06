@@ -12,7 +12,9 @@
 # commit and exits non-zero.
 set -euo pipefail
 
-HUD_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# `hud-update` is a symlink into the repo — resolve it, or HUD_DIR would be
+# /usr/local and git would say "not a git repository".
+HUD_DIR="$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/.." && pwd)"
 REF=""
 FORCE=0
 BUILD=1
@@ -26,6 +28,7 @@ while [ $# -gt 0 ]; do
     esac
 done
 [ "$(id -u)" -eq 0 ] || { echo "run with sudo (services need root)" >&2; exit 1; }
+[ -d "$HUD_DIR/.git" ] || { echo "$HUD_DIR is not a git checkout" >&2; exit 1; }
 if [ "$(findmnt -n -o FSTYPE / 2>/dev/null)" = "overlay" ]; then
     echo "root filesystem is in overlayfs (read-only) mode — an update would vanish at reboot." >&2
     echo "disable it first:  sudo raspi-config nonint disable_overlayfs && sudo reboot" >&2
@@ -34,6 +37,9 @@ fi
 
 HUD_USER="$(stat -c %U "$HUD_DIR")"
 as_user() { sudo -u "$HUD_USER" -H "$@"; }
+# Every git call runs as the repo owner: root would trip git's
+# "dubious ownership" guard on a user-owned checkout.
+g() { as_user git -C "$HUD_DIR" "$@"; }
 log() { printf '[%s] %s\n' "$(date +%H:%M:%S)" "$*"; }
 
 # One update at a time — two runs must not interleave.
@@ -41,29 +47,30 @@ exec 9>/run/lock/hud-update.lock
 flock -n 9 || { echo "another hud-update is running" >&2; exit 1; }
 
 cd "$HUD_DIR"
-PREV="$(git rev-parse HEAD)"
-BRANCH="$(git rev-parse --abbrev-ref HEAD)"   # "HEAD" when detached
+PREV="$(g rev-parse HEAD)"
+BRANCH="$(g rev-parse --abbrev-ref HEAD)"   # "HEAD" when detached
 [ -n "$REF" ] || REF="${BRANCH/HEAD/main}"
 
 log "fetching origin"
-as_user git fetch -q --prune origin
+g fetch -q --prune origin
 
 # Branch name → track origin/<branch>; anything else → detached at that commit.
-if as_user git show-ref -q --verify "refs/remotes/origin/$REF"; then
-    as_user git checkout -q -f -B "$REF" "origin/$REF"
+# -f: the deploy target's working tree is disposable — git is the truth.
+if g show-ref -q --verify "refs/remotes/origin/$REF"; then
+    g checkout -q -f -B "$REF" "origin/$REF"
 else
-    as_user git checkout -q -f --detach "$REF"
+    g checkout -q -f --detach "$REF"
 fi
-NEW="$(git rev-parse HEAD)"
+NEW="$(g rev-parse HEAD)"
 
 if [ "$NEW" = "$PREV" ] && [ "$FORCE" -eq 0 ]; then
-    log "already at $(git rev-parse --short HEAD) — nothing to do"
+    log "already at $(g rev-parse --short HEAD) — nothing to do"
     systemctl is-active -q hud-server || systemctl restart hud-server
     exit 0
 fi
-log "updating $(git rev-parse --short "$PREV") → $(git rev-parse --short "$NEW")"
+log "updating $(g rev-parse --short "$PREV") → $(g rev-parse --short "$NEW")"
 
-changed() { [ "$FORCE" -eq 1 ] || ! git diff --quiet "$PREV" "$NEW" -- "$@"; }
+changed() { [ "$FORCE" -eq 1 ] || ! g diff --quiet "$PREV" "$NEW" -- "$@"; }
 
 install_and_build() {
     if changed pyproject.toml hud/; then
@@ -88,6 +95,7 @@ install_and_build() {
         done
         cp deploy/can0.service /etc/systemd/system/
         cp deploy/99-obd-elm327.rules /etc/udev/rules.d/
+        chmod +x deploy/kiosk.sh deploy/update.sh
         systemctl daemon-reload
         udevadm control --reload-rules
     fi
@@ -110,24 +118,24 @@ restart_services() {
 
 WEB_CHANGED=0
 if install_and_build && restart_services && healthy; then
-    log "deployed $(git rev-parse --short HEAD) — backend healthy"
+    log "deployed $(g rev-parse --short HEAD) — backend healthy"
     exit 0
 fi
 
 # ---- rollback ---------------------------------------------------------------
 log "!! backend unhealthy after update — last log lines:"
 journalctl -u hud-server -n 40 --no-pager || true
-log "rolling back to $(git rev-parse --short "$PREV")"
+log "rolling back to $(g rev-parse --short "$PREV")"
 if [ "$BRANCH" != "HEAD" ]; then
-    as_user git checkout -q -B "$BRANCH" "$PREV"
+    g checkout -q -f -B "$BRANCH" "$PREV"
 else
-    as_user git checkout -q --detach "$PREV"
+    g checkout -q -f --detach "$PREV"
 fi
-NEW="$PREV"; PREV="$(git rev-parse HEAD)"; FORCE=1
+NEW="$PREV"; PREV="$(g rev-parse HEAD)"; FORCE=1
 install_and_build || true
 restart_services || true
 if healthy; then
-    log "rollback OK — running $(git rev-parse --short HEAD); the new commit is NOT deployed"
+    log "rollback OK — running $(g rev-parse --short HEAD); the new commit is NOT deployed"
 else
     log "!! rollback also unhealthy — inspect journalctl -u hud-server"
 fi
