@@ -48,6 +48,8 @@ done
 [ "$(id -u)" -eq 0 ] || { echo "run with sudo" >&2; exit 1; }
 [ "$HUD_USER" != "root" ] || HUD_USER="pi"
 id "$HUD_USER" >/dev/null 2>&1 || { echo "user $HUD_USER does not exist (use --user)" >&2; exit 1; }
+# cage needs DRM + input device access; dialout for the ELM327 serial port.
+usermod -aG video,input,render,tty,dialout "$HUD_USER" 2>/dev/null || true
 
 log() { printf '\n==> %s\n' "$*"; }
 
@@ -145,6 +147,20 @@ add_boot_line() {
 if grep -q "Raspberry Pi 5" /proc/device-tree/model 2>/dev/null; then
     log "Pi 5: lifting the USB current cap (buck converters can't negotiate USB-PD)"
     add_boot_line "usb_max_current_enable=1"
+fi
+if [ "$KIOSK" -eq 1 ]; then
+    # Black screen until the HUD appears: no rainbow splash, no kernel
+    # chatter, no blinking console cursor (the kiosk unit owns tty1).
+    add_boot_line "disable_splash=1"
+    CMDLINE="$(dirname "$CONFIG_TXT")/cmdline.txt"
+    if [ -f "$CMDLINE" ]; then
+        for opt in quiet vt.global_cursor_default=0; do
+            if ! grep -qw "$opt" "$CMDLINE"; then
+                sed -i "1s/\$/ $opt/" "$CMDLINE"
+                REBOOT_NEEDED=1
+            fi
+        done
+    fi
 fi
 case "$CAN_HAT" in
     pican2)

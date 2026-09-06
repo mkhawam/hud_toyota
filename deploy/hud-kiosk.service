@@ -3,8 +3,10 @@
 # no login manager, ~10s to pixels.
 [Unit]
 Description=HUD kiosk (Chromium in cage)
-After=hud-server.service systemd-user-sessions.service
+After=hud-server.service systemd-user-sessions.service getty@tty1.service
 Wants=hud-server.service
+# Take tty1 away from the login prompt — otherwise both fight for the screen.
+Conflicts=getty@tty1.service
 
 [Service]
 User=__USER__
