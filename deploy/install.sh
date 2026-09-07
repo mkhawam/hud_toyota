@@ -15,6 +15,9 @@
 #   --source MODE     vehicle source for the service: auto|elm327|can|sim (default auto)
 #   --can-hat KIND    pican2 | waveshare | none — writes the MCP2515 overlay (default none)
 #   --no-kiosk        skip Chromium/cage (headless box, HUD viewed from another device)
+#   --hdmi-mode M     force the HDMI output on at boot: auto (detect the attached
+#                     panel's mode, default) | 640x480@60 | none. Cures panels that
+#                     stay black until an HDMI replug.
 #   --no-start        install but don't start services now
 #
 # Idempotent: re-running updates packages/units in place. Later updates go
@@ -28,6 +31,7 @@ BRANCH="main"
 HUD_USER="${SUDO_USER:-pi}"
 SOURCE="auto"
 CAN_HAT="none"
+HDMI_MODE="auto"
 KIOSK=1
 START=1
 
@@ -39,9 +43,10 @@ while [ $# -gt 0 ]; do
         --user) HUD_USER="$2"; shift 2 ;;
         --source) SOURCE="$2"; shift 2 ;;
         --can-hat) CAN_HAT="$2"; shift 2 ;;
+        --hdmi-mode) HDMI_MODE="$2"; shift 2 ;;
         --no-kiosk) KIOSK=0; shift ;;
         --no-start) START=0; shift ;;
-        -h|--help) sed -n '2,22p' "$0"; exit 0 ;;
+        -h|--help) sed -n '2,25p' "$0"; exit 0 ;;
         *) echo "unknown option: $1" >&2; exit 2 ;;
     esac
 done
@@ -85,6 +90,8 @@ PKGS="git python3-venv python3-pip can-utils curl ca-certificates"
 apt-get install -y -qq $PKGS
 if [ "$KIOSK" -eq 1 ]; then
     apt-get install -y -qq chromium-browser 2>/dev/null || apt-get install -y -qq chromium
+    # No arrow on the windshield: the kiosk unit points XCURSOR_THEME here.
+    python3 "$HUD_DIR/deploy/xcursor_invisible.py" /usr/share/icons/hud-invisible >/dev/null
 fi
 
 # Node 22 LTS (Bookworm's apt nodejs is too old for Vite) so the Pi can
@@ -177,6 +184,26 @@ if [ "$KIOSK" -eq 1 ]; then
                 REBOOT_NEEDED=1
             fi
         done
+        # Force the HDMI output on at a fixed mode ("D" = drive it even without
+        # a hotplug/EDID handshake). Cheap panels otherwise stay black at boot
+        # until the cable is replugged.
+        if [ "$HDMI_MODE" != "none" ] && ! grep -q "video=HDMI-A-" "$CMDLINE"; then
+            CONN=""; MODE="$HDMI_MODE"
+            for st in /sys/class/drm/card*-HDMI-A-*/status; do
+                if grep -qs '^connected' "$st"; then
+                    CONN="$(basename "$(dirname "$st")" | sed 's/^card[0-9]*-//')"
+                    [ "$MODE" = "auto" ] && MODE="$(head -1 "$(dirname "$st")/modes")@60"
+                    break
+                fi
+            done
+            if [ -n "$CONN" ] && [ "$MODE" != "auto" ] && [ "$MODE" != "@60" ]; then
+                log "forcing HDMI output: $CONN at $MODE"
+                sed -i "1s/\$/ video=$CONN:${MODE}D/" "$CMDLINE"
+                REBOOT_NEEDED=1
+            else
+                echo "note: no HDMI panel detected now — re-run with --hdmi-mode 640x480@60 (etc.) with the panel attached"
+            fi
+        fi
     fi
 fi
 case "$CAN_HAT" in

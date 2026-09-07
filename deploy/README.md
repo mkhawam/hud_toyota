@@ -72,6 +72,16 @@ key on the Pi (`HUD_HOST=user@host` overrides the default). CI
 ([.github/workflows/ci.yml](../.github/workflows/ci.yml)) runs the tests and
 frontend build on every push so a broken commit is visible before you deploy.
 
+### Screen black at boot until you replug HDMI?
+
+Cheap panels (this 640×480 one included) botch the boot-time hotplug/EDID
+handshake. The installer forces the output on at a fixed mode via the kernel
+cmdline (`video=HDMI-A-1:640x480@60D` — `D` = drive it without hotplug), and
+the kiosk unit waits for the connector to report `connected` before starting
+the compositor. Re-run `sudo deploy/install.sh --hdmi-mode 640x480@60` with
+the panel attached if it was installed headless; check with
+`cat /sys/class/drm/card*-HDMI-A-1/{status,enabled}` after a boot.
+
 ## Verify on the car
 
 ```sh

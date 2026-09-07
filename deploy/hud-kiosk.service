@@ -23,6 +23,13 @@ UtmpIdentifier=tty1
 UtmpMode=user
 Restart=always
 RestartSec=2
+# Invisible cursor theme (deploy/xcursor_invisible.py): cage's default arrow
+# would otherwise sit on the windshield until the first mouse move. The HUD
+# page draws its own cursor while the mouse is actually moving.
+Environment=XCURSOR_THEME=hud-invisible XCURSOR_SIZE=24
+# Don't start the compositor before the panel has reported itself (cheap
+# HDMI panels come up slower than the Pi); gives up after 30 s and tries anyway.
+ExecStartPre=-/usr/bin/timeout 30 /bin/sh -c 'until grep -qs ^connected /sys/class/drm/card*-HDMI-A-*/status; do sleep 1; done'
 ExecStart=/usr/bin/cage -- __HUD_DIR__/deploy/kiosk.sh
 
 [Install]
