@@ -90,8 +90,17 @@ PKGS="git python3-venv python3-pip can-utils curl ca-certificates"
 apt-get install -y -qq $PKGS
 if [ "$KIOSK" -eq 1 ]; then
     apt-get install -y -qq chromium-browser 2>/dev/null || apt-get install -y -qq chromium
-    # No arrow on the windshield: the kiosk unit points XCURSOR_THEME here.
+    # No arrow on the windshield. wlroots ignores XCURSOR_THEME and loads the
+    # theme literally named "default", so shadow it for the kiosk user with an
+    # invisible copy (user dirs precede /usr/share/icons in the search path).
+    HUD_HOME="$(getent passwd "$HUD_USER" | cut -d: -f6)"
     python3 "$HUD_DIR/deploy/xcursor_invisible.py" /usr/share/icons/hud-invisible >/dev/null
+    for d in "$HUD_HOME/.local/share/icons/default" "$HUD_HOME/.icons/default"; do
+        sudo -u "$HUD_USER" python3 "$HUD_DIR/deploy/xcursor_invisible.py" "$d" >/dev/null
+    done
+    # Chromium reads its cursor theme from GTK settings, not the env.
+    sudo -u "$HUD_USER" DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$(id -u "$HUD_USER")/bus" \
+        gsettings set org.gnome.desktop.interface cursor-theme hud-invisible 2>/dev/null || true
 fi
 
 # Node 22 LTS (Bookworm's apt nodejs is too old for Vite) so the Pi can
