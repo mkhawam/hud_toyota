@@ -35,21 +35,42 @@ curl -fsSL https://raw.githubusercontent.com/mkhawam/hud_toyota/main/deploy/inst
     | sudo bash -s -- --repo https://github.com/mkhawam/hud_toyota.git --can-hat pican2
 ```
 
-[install.sh](install.sh) clones to `/opt/hud`, installs apt packages + Node 22
-+ the Python venv, builds the frontend, installs the udev rule and systemd
-units, writes the Pi 5 `usb_max_current_enable=1` and the CAN overlay into
-`config.txt`, starts everything, and health-checks the backend. Re-running
-it is safe. Options: `--can-hat pican2|waveshare|none`, `--source
-auto|elm327|can|sim`, `--user`, `--branch`, `--no-kiosk` (headless), `--no-start`.
-Reboot once if it says `config.txt` changed.
+[install.sh](install.sh) clones to `/opt/hud`, installs apt packages (including
+PySide6/Qt built for the Pi's GPU) + Node 22 + the Python venv, builds the
+phone pages, installs the udev rule and the systemd unit, writes the Pi 5
+`usb_max_current_enable=1`, the CAN overlay and the forced HDMI mode into the
+boot config, sets up the fallback Wi-Fi access point, starts everything, and
+health-checks the backend. Re-running it is safe. Options: `--can-hat
+pican2|waveshare|none`, `--source auto|elm327|can|sim`, `--hdmi-mode`,
+`--ap-ssid`, `--ap-password`, `--no-ap`, `--user`, `--branch`,
+`--no-display` (headless), `--no-start`. Reboot once if it says the boot
+config changed.
 
-Boot flow: `hud-server.service` (backend) → `hud-kiosk.service` (Chromium in
-the cage compositor on tty1, `--incognito` so hard power cuts never leave a
-restore-session prompt). The full **desktop** image works too: the installer
-detects lightdm and switches the Pi to console boot (`raspi-config` "B1"),
-because a desktop session on tty7 would otherwise own the screen and the
-kiosk would sit at "Timeout waiting session to become active". To get the
-desktop back on the bench: `sudo raspi-config nonint do_boot_behaviour B4`.
+Boot flow: a single `hud-server.service` runs the backend, the settings web
+server and the native display. The display uses Qt's `eglfs` platform: it
+takes tty1 and draws straight to the panel through KMS, so there is no
+desktop, compositor, browser or mouse cursor involved. The full **desktop**
+image works too: the installer switches it to console boot, because a desktop
+session would otherwise own the screen. To get the desktop back on the bench:
+`sudo raspi-config nonint do_boot_behaviour B4`.
+
+## Changing settings in the car
+
+There is no home Wi-Fi in the car, so two paths work with nothing else around:
+
+- **On the HUD itself:** press OK (Enter) for the menu. Up/Down select,
+  Left/Right change, OK applies, Esc closes. Theme, units, night mode and
+  brightness, glow, mirroring, projection calibration, the debug overlay and
+  trip reset are all there, and changes save immediately.
+- **From your phone:** when the Pi boots without a known network in range, it
+  broadcasts its own Wi-Fi (`HUD-<hostname>` by default). Join it and open
+  `http://10.42.0.1:8000/settings`. The menu's "Phone settings" row shows the
+  network name, password and address on the windshield. At home, the Pi joins
+  your normal Wi-Fi instead (or your phone's hotspot, if you've added it as a
+  known network), because the access point has the lowest priority.
+
+The access point only takes over at boot. If you park at home with the car
+running, the Pi stays on its own network until the next start.
 
 ## Updating
 
@@ -76,11 +97,21 @@ frontend build on every push so a broken commit is visible before you deploy.
 
 Cheap panels (this 640×480 one included) botch the boot-time hotplug/EDID
 handshake. The installer forces the output on at a fixed mode via the kernel
-cmdline (`video=HDMI-A-1:640x480@60D` — `D` = drive it without hotplug), and
-the kiosk unit waits for the connector to report `connected` before starting
-the compositor. Re-run `sudo deploy/install.sh --hdmi-mode 640x480@60` with
-the panel attached if it was installed headless; check with
+cmdline (`video=HDMI-A-1:640x480@60D`, where `D` means drive it without
+hotplug), and the service waits for the connector to report `connected`
+before starting the display. Re-run `sudo deploy/install.sh --hdmi-mode
+640x480@60` with the panel attached if it was installed headless; check with
 `cat /sys/class/drm/card*-HDMI-A-1/{status,enabled}` after a boot.
+
+### Screenshot of what's on the panel
+
+The running HUD can capture itself. From any machine on the same network:
+
+```sh
+curl -o hud.png http://hud.local:8000/api/screenshot
+```
+
+It returns what the panel is showing right now (mirrored, as projected).
 
 ## Verify on the car
 

@@ -20,7 +20,7 @@ from typing import Any
 
 from fastapi import Body, FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.encoders import jsonable_encoder
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import ValidationError
 
@@ -34,7 +34,8 @@ FLUSH_MS = 50
 WEB_DIST = Path(__file__).resolve().parents[1] / "web" / "dist"
 
 
-def create_app(bus: Bus, config: Config) -> FastAPI:
+def create_app(bus: Bus, config: Config, screenshot=None) -> FastAPI:
+    """``screenshot``: async (path) -> bool, given when the native display runs."""
     app = FastAPI(title="hud-toyota")
     started = time.time()
 
@@ -82,6 +83,18 @@ def create_app(bus: Bus, config: Config) -> FastAPI:
     async def trip_reset() -> dict:
         bus.publish("trip.reset", {})
         return {"ok": True}
+
+    @app.get("/api/screenshot")
+    async def get_screenshot():
+        """PNG of what the native HUD is showing right now."""
+        if screenshot is None:
+            return JSONResponse({"error": "no native display in this process"}, status_code=404)
+        import tempfile
+
+        path = str(Path(tempfile.gettempdir()) / f"hud-shot-{time.time_ns()}.png")
+        if not await screenshot(path):
+            return JSONResponse({"error": "capture failed"}, status_code=503)
+        return FileResponse(path, media_type="image/png")
 
     @app.get("/api/debug")
     async def debug_info() -> dict:

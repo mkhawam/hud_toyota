@@ -5,15 +5,21 @@ A 5" high-brightness screen lies flat on the dash and reflects off the windshiel
 so the UI renders **mirror-flipped on pure black** — only lit pixels appear to float.
 
 ```
-providers (CAN / ELM327 / sim, weather, ...) ─► async event bus ─► WebSocket ─► SolidJS widgets
+providers (CAN / ELM327 / sim, weather, ...) ─► async event bus ─► native QML display (eglfs)
+                                                        └────────► settings web server (phone)
 ```
 
-- **Backend** — Python 3.11+ / FastAPI. Providers publish normalized topics
-  (`vehicle.speed_kph`, `alerts.active`, ...) onto an asyncio pub/sub bus;
-  the server coalesces them into 50 ms batches over `/ws`.
-- **Frontend** — TypeScript + SolidJS + Vite. Each topic maps to a signal;
-  widgets are single `.tsx` files registered by name and placed by
+- **Display** — native PySide6 + QML (`hud/ui/`), running in the same Python
+  process as the backend. The bus feeds QML property maps directly; on the Pi,
+  Qt's `eglfs` backend draws straight to the panel with no compositor or
+  browser. Widgets are single files in `hud/ui/qml/widgets/`, placed by
   `config/hud.yaml`'s layout grid.
+- **Backend** — Python 3.11+ asyncio. Providers publish normalized topics
+  (`vehicle.speed_kph`, `alerts.active`, ...) onto a pub/sub bus.
+- **Settings server** — small FastAPI app serving the phone settings and
+  drives pages (TypeScript + SolidJS, `web/`). In the car the Pi broadcasts
+  its own Wi-Fi when no known network is around, so the phone can reach it.
+  The common settings are also on the HUD itself (OK button → menu).
 - **Vehicle data** — unified interface (`hud/providers/vehicle/base.py`):
   CAN HAT (SocketCAN) primary, ELM327 USB fallback, simulator for desktop dev.
 
@@ -22,26 +28,36 @@ providers (CAN / ELM327 / sim, weather, ...) ─► async event bus ─► WebSo
 ```sh
 .\start_dev            # Windows (PowerShell or cmd)
 ./start_dev            # Git Bash / Linux / macOS
-# open http://localhost:5173/?mirror=0
 ```
 
-That's it — first run bootstraps the venv and node_modules, then starts the
-backend (sim vehicle + live weather) plus the Vite dev server with hot reload.
-Pass `elm327` to use a real adapter plugged into this machine.
+First run bootstraps the venv (with PySide6) and node_modules. The native HUD
+opens in a 640×480 window with simulated data; the phone pages run with hot
+reload at http://localhost:5173/settings/. Pass `elm327` to use a real adapter
+plugged into this machine.
 
-Production-style run (serves the built frontend, no Node needed):
+Keys on the HUD (a keyboard-emulating button panel works the same):
+
+| Key | Action |
+|---|---|
+| OK / Enter | on-device menu: theme, units, night mode, brightness, glow, mirror, calibration, debug, trip reset, phone-settings address |
+| C | calibrate the projection box (arrows move, +/− scale, OK saves) |
+| D | debug overlay (every bus topic with value and age) |
+
+Direct runs:
 
 ```sh
-cd web && npm run build && cd ..
-.venv/Scripts/python -m hud --source sim      # .venv/bin on Linux
-# open http://localhost:8000        (mirrored — as projected)
-# open http://localhost:8000/?mirror=0   (readable, for dev)
+.venv/Scripts/python -m hud --ui --source sim --mirror off   # readable dev window
+.venv/Scripts/python -m hud --source sim                     # headless: backend + settings server
+.venv/Scripts/python -m hud --ui --source sim --screenshot out.png --screenshot-after 8
 ```
+
+`--press Return,Down` synthesizes key presses after startup, handy with
+`--screenshot` to capture the menu or calibration screens.
 
 ## Tests
 
 ```sh
-.venv/Scripts/python -m pytest -q     # bus, alerts engine
+.venv/Scripts/python -m pytest -q     # backend + native UI (QML loads with zero warnings)
 cd web && npm run typecheck
 python scripts/ws_check.py            # live WS smoke check against a running server
 ```
@@ -71,7 +87,7 @@ and referencing it in `layout`.
 ## Roadmap
 
 1. ✅ Core loop: bus → server → widgets, sim source, mirror mode, alerts engine
-2. ✅ ELM327 USB path (`python-obd`), kiosk + systemd + udev deploy assets ([deploy/](deploy/))
+2. ✅ ELM327 USB path (`python-obd`), systemd + udev deploy assets ([deploy/](deploy/))
 3. ✅ CAN path: SocketCAN + cantools + vendored opendbc Toyota DBC, auto manager
    (CAN fast channels + ELM327 slow channels, failover both ways) — **on-car
    validation pending**, see [deploy/README.md](deploy/README.md)

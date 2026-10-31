@@ -1,0 +1,8 @@
+singleton Style 1.0 Style.qml
+GlowText 1.0 GlowText.qml
+Chip 1.0 Chip.qml
+Icon 1.0 Icon.qml
+Stat 1.0 Stat.qml
+Segments 1.0 Segments.qml
+DebugPanel 1.0 DebugPanel.qml
+Menu 1.0 Menu.qml

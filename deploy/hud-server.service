@@ -1,15 +1,39 @@
-# HUD backend — installed by deploy/install.sh (paths/user substituted there)
+# HUD: backend + native display (PySide6/QML on eglfs) + settings web server,
+# one process. Installed by deploy/install.sh (paths/user substituted there).
+# The DISPLAY block is stripped for headless installs (--no-display).
 [Unit]
-Description=HUD backend server
-After=network.target
+Description=HUD (native display + settings server)
+After=network.target systemd-user-sessions.service getty@tty1.service plymouth-quit-wait.service
+# ---- DISPLAY ----
+# Own tty1: no login prompt fighting for the screen.
+Conflicts=getty@tty1.service
+# ---- END DISPLAY ----
 
 [Service]
 Type=simple
 User=__USER__
 WorkingDirectory=__HUD_DIR__
-ExecStart=__HUD_DIR__/.venv/bin/python -m hud --source auto
 Restart=always
 RestartSec=2
+# ---- DISPLAY ----
+# A logind session on tty1 so eglfs can become DRM master and read the
+# keypad/keyboard — the same pattern kiosk compositors use.
+PAMName=login
+TTYPath=/dev/tty1
+TTYReset=yes
+TTYVHangup=yes
+StandardInput=tty
+StandardOutput=journal
+StandardError=journal
+UtmpIdentifier=tty1
+UtmpMode=user
+# eglfs draws straight to KMS: no compositor, no cursor (hidden), no browser.
+Environment=QT_QPA_PLATFORM=eglfs QT_QPA_EGLFS_INTEGRATION=eglfs_kms QT_QPA_EGLFS_HIDECURSOR=1 QT_QPA_EGLFS_ALWAYS_SET_MODE=1
+# Wait for the panel to report itself (cheap HDMI panels come up slower than
+# the Pi); gives up after 30 s and tries anyway.
+ExecStartPre=-/usr/bin/timeout 30 /bin/sh -c 'until grep -qs ^connected /sys/class/drm/card*-HDMI-A-*/status; do sleep 1; done'
+# ---- END DISPLAY ----
+ExecStart=__HUD_DIR__/.venv/bin/python -m hud --source auto --ui
 
 [Install]
 WantedBy=multi-user.target

@@ -18,6 +18,11 @@ vehicle = [
     "python-can>=4.4",   # SocketCAN
     "cantools>=39.0",    # DBC decode
 ]
+# Native HUD display. On the Pi it comes from apt (Qt built for its GPU) and
+# the venv uses system site-packages; desktops get it from PyPI.
+ui = [
+    "PySide6>=6.6",
+]
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.24",

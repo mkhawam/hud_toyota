@@ -70,6 +70,20 @@ if [ "$NEW" = "$PREV" ] && [ "$FORCE" -eq 0 ]; then
 fi
 log "updating $(g rev-parse --short "$PREV") → $(g rev-parse --short "$NEW")"
 
+# Display installs run the native HUD (--ui). An install from before the
+# native UI (Chromium kiosk) or one missing PySide6 needs packages that pip
+# can't provide: run the idempotent installer once to switch it over.
+DISPLAY_MODE=0
+if [ -f /etc/systemd/system/hud-kiosk.service ] || grep -q -- " --ui" /etc/systemd/system/hud-server.service 2>/dev/null; then
+    DISPLAY_MODE=1
+fi
+if [ "$DISPLAY_MODE" -eq 1 ] && { [ -f /etc/systemd/system/hud-kiosk.service ] || \
+        ! as_user env QT_QPA_PLATFORM=offscreen "$HUD_DIR/.venv/bin/python" -c "import PySide6.QtQuick" 2>/dev/null; }; then
+    SRC="$(grep -oE -- '--source [a-z0-9]+' /etc/systemd/system/hud-server.service 2>/dev/null | head -1 | cut -d' ' -f2)"
+    log "switching this Pi to the native HUD (one-time installer run)"
+    exec bash "$HUD_DIR/deploy/install.sh" --user "$HUD_USER" --source "${SRC:-auto}"
+fi
+
 changed() { [ "$FORCE" -eq 1 ] || ! g diff --quiet "$PREV" "$NEW" -- "$@"; }
 
 install_and_build() {
@@ -87,15 +101,20 @@ install_and_build() {
         # keep whatever --source the installer chose (auto/elm327/can/sim)
         SRC="$(grep -oE -- '--source [a-z0-9]+' /etc/systemd/system/hud-server.service 2>/dev/null | head -1 || true)"
         SRC="${SRC:---source auto}"
-        for unit in hud-server hud-kiosk; do
-            [ -f "/etc/systemd/system/$unit.service" ] || continue
+        # keep the display/headless mode the installer chose
+        if [ "$DISPLAY_MODE" -eq 1 ]; then
             sed -e "s|__HUD_DIR__|$HUD_DIR|g" -e "s|__USER__|$HUD_USER|g" \
                 -e "s|--source auto|$SRC|g" \
-                "deploy/$unit.service" > "/etc/systemd/system/$unit.service"
-        done
+                deploy/hud-server.service > /etc/systemd/system/hud-server.service
+        else
+            sed -e "s|__HUD_DIR__|$HUD_DIR|g" -e "s|__USER__|$HUD_USER|g" \
+                -e "s|--source auto|$SRC|g" -e "s| --ui||" \
+                -e "/# ---- DISPLAY ----/,/# ---- END DISPLAY ----/d" \
+                deploy/hud-server.service > /etc/systemd/system/hud-server.service
+        fi
         cp deploy/can0.service /etc/systemd/system/
         cp deploy/99-obd-elm327.rules /etc/udev/rules.d/
-        chmod +x deploy/kiosk.sh deploy/update.sh
+        chmod +x deploy/update.sh
         systemctl daemon-reload
         udevadm control --reload-rules
     fi
@@ -110,10 +129,7 @@ healthy() {
 }
 
 restart_services() {
-    systemctl restart hud-server
-    if [ "${WEB_CHANGED:-0}" -eq 1 ] && systemctl is-active -q hud-kiosk; then
-        systemctl restart hud-kiosk   # load the new bundle
-    fi
+    systemctl restart hud-server   # backend, native display and web server are one process
 }
 
 WEB_CHANGED=0

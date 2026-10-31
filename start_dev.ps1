@@ -4,7 +4,8 @@
 #   .\start_dev.ps1 elm327     # real adapter plugged into this machine
 #
 # First run bootstraps the venv and node_modules automatically.
-# Frontend: http://localhost:5173/?mirror=0   (hot reload, proxies to backend)
+# Native HUD opens in a 640x480 window (mirroring off for readability).
+# Phone pages with hot reload: http://localhost:5173/settings/
 param([string]$Source = "sim")
 
 $ErrorActionPreference = "Stop"
@@ -15,7 +16,7 @@ $py = Join-Path $PSScriptRoot ".venv\Scripts\python.exe"
 if (-not (Test-Path $py)) {
     Write-Host "==> first run: creating .venv and installing python deps"
     python -m venv .venv
-    & $py -m pip install -q -e ".[dev]"
+    & $py -m pip install -q -e ".[dev,ui]"
 }
 
 if (-not (Test-Path "web\node_modules")) {
@@ -26,10 +27,10 @@ if (-not (Test-Path "web\node_modules")) {
 }
 
 Write-Host "==> backend on :$Port (vehicle source: $Source)"
-$backend = Start-Process -FilePath $py -ArgumentList "-m", "hud", "--source", $Source, "--port", "$Port" `
+$backend = Start-Process -FilePath $py -ArgumentList "-m", "hud", "--ui", "--mirror", "off", "--source", $Source, "--port", "$Port" `
     -PassThru -NoNewWindow
 
-Write-Host "==> vite dev server - open http://localhost:5173/?mirror=0"
+Write-Host "==> vite dev server for the phone pages - http://localhost:5173/settings/"
 try {
     Set-Location web
     npm run dev

@@ -69,23 +69,34 @@ def make_providers(bus: Bus, config: Config, source: str) -> list[DataProvider]:
     return providers
 
 
-async def run(config: Config, source_override: str | None = None) -> None:
-    bus = Bus()
-    source = source_override or config.get("providers.vehicle.source", "sim")
+async def serve(bus: Bus, config: Config, source: str, stop: asyncio.Event,
+                extra: list | None = None, screenshot=None) -> None:
+    """Run providers + the settings web server until ``stop`` is set.
 
+    ``extra`` coroutines (e.g. the native UI's bus forwarder) run alongside
+    and are cancelled on the way out.
+    """
     providers = make_providers(bus, config, source)
-
-    app = create_app(bus, config)
+    app = create_app(bus, config, screenshot=screenshot)
     host = config.get("server.host", "0.0.0.0")
     port = int(config.get("server.port", 8000))
 
     for p in providers:
         p.start()
-    log.info("HUD up: http://%s:%s (vehicle source: %s)", host, port, source)
+    tasks = [asyncio.create_task(c) for c in (extra or [])]
+    log.info("HUD backend up: http://%s:%s (vehicle source: %s)", host, port, source)
 
     try:
         async with run_server(app, host, port):
-            await asyncio.Event().wait()  # run until cancelled (Ctrl-C)
+            await stop.wait()
     finally:
+        for t in tasks:
+            t.cancel()
         for p in providers:
             await p.stop()
+
+
+async def run(config: Config, source_override: str | None = None) -> None:
+    """Headless: backend + settings web server only (no native display)."""
+    source = source_override or config.get("providers.vehicle.source", "sim")
+    await serve(Bus(), config, source, asyncio.Event())

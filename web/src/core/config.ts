@@ -1,6 +1,5 @@
-/** HUD config fetched from /api/config; ?mirror=0|1 overrides for dev. */
-import { createEffect, createRoot, createSignal, on } from "solid-js";
-import { useTopic } from "./topics";
+/** HUD config fetched from /api/config (phone settings + drives pages). */
+import { createSignal } from "solid-js";
 
 export interface LayoutItem {
   widget: string;
@@ -41,16 +40,6 @@ export async function loadConfig(): Promise<void> {
   }
 }
 
-/** Re-fetch config whenever the settings page saves (config.updated on the
- * bus). Refetching is idempotent, so the primed last-value a reconnecting
- * client receives is harmless. */
-export function watchConfigUpdates(): void {
-  createRoot(() => {
-    const updated = useTopic("config.updated");
-    createEffect(on(updated, () => void loadConfig(), { defer: true }));
-  });
-}
-
 export function mirrored(): boolean {
   const q = new URLSearchParams(location.search).get("mirror");
   if (q !== null) return q === "1" || q === "true";
@@ -71,4 +60,18 @@ export function aspectRatio(): number | null {
   if (!raw) return null;
   const [w, h] = String(raw).split(":").map(Number);
   return w > 0 && h > 0 ? w / h : null;
+}
+
+/** Apply a saved section to the local copy (dotted path, e.g. "alerts.rules")
+ * so summaries elsewhere on the page reflect it without a refetch. */
+export function applyLocal(section: string, value: unknown): void {
+  const next = structuredClone(config()) as Record<string, unknown>;
+  const parts = section.split(".");
+  let node = next;
+  for (const p of parts.slice(0, -1)) {
+    if (typeof node[p] !== "object" || node[p] === null) node[p] = {};
+    node = node[p] as Record<string, unknown>;
+  }
+  node[parts[parts.length - 1]] = value;
+  setConfig(next as HudConfig);
 }

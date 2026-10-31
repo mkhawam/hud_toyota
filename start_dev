@@ -5,7 +5,8 @@
 #   ./start_dev elm327     # real adapter plugged into this machine
 #
 # First run bootstraps the venv and node_modules automatically.
-# Frontend: http://localhost:5173/?mirror=0   (hot reload, proxies to backend)
+# Native HUD opens in a 640x480 window (mirroring off for readability).
+# Phone pages with hot reload: http://localhost:5173/settings/
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -21,7 +22,7 @@ else
     echo "==> first run: creating .venv and installing python deps"
     python -m venv .venv 2>/dev/null || python3 -m venv .venv
     if [ -x .venv/Scripts/python.exe ]; then PY=.venv/Scripts/python; else PY=.venv/bin/python; fi
-    "$PY" -m pip install -q -e ".[dev]"
+    "$PY" -m pip install -q -e ".[dev,ui]"
 fi
 
 if [ ! -d web/node_modules ]; then
@@ -30,9 +31,9 @@ if [ ! -d web/node_modules ]; then
 fi
 
 echo "==> backend on :$PORT (vehicle source: $SOURCE)"
-"$PY" -m hud --source "$SOURCE" --port "$PORT" &
+"$PY" -m hud --ui --mirror off --source "$SOURCE" --port "$PORT" &
 BACKEND_PID=$!
 trap 'kill "$BACKEND_PID" 2>/dev/null || true' EXIT INT TERM
 
-echo "==> vite dev server — open http://localhost:5173/?mirror=0"
+echo "==> vite dev server for the phone pages - http://localhost:5173/settings/"
 cd web && npm run dev

@@ -3,11 +3,24 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Crect width=%2732%27 height=%2732%27 rx=%277%27 fill=%27%23000%27/%3E%3Cpath d=%27M7 21h18M9 16h14M11 11h10%27 stroke=%27%233ad3ee%27 stroke-width=%273%27 stroke-linecap=%27round%27/%3E%3C/svg%3E" />
     <title>HUD</title>
-    <style>html { background: #000; }</style>
+    <style>
+      html { background: #0b0f12; color: #dfe9ef; font-family: system-ui, sans-serif; }
+      main { max-width: 420px; margin: 18vh auto 0; padding: 0 20px; }
+      h1 { color: #35e0ff; font-weight: 600; letter-spacing: 0.04em; }
+      p { color: #7b93a1; line-height: 1.5; }
+      a { display: block; margin: 14px 0; padding: 18px 20px; border-radius: 12px;
+          background: #141b21; color: #eaf6ff; text-decoration: none; font-size: 18px; }
+      a span { float: right; color: #35e0ff; }
+    </style>
   </head>
   <body>
-    <div id="root"></div>
-    <script type="module" src="/src/index.tsx"></script>
+    <main>
+      <h1>HUD</h1>
+      <p>The display runs natively on the Pi. Change its settings or review drives here.</p>
+      <a href="/settings/">Settings <span>&rsaquo;</span></a>
+      <a href="/trips/">Drives <span>&rsaquo;</span></a>
+    </main>
   </body>
 </html>
