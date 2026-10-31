@@ -1,11 +1,7 @@
-# Scripts run on the Pi must stay LF — a CRLF shebang line fails with
-# "bash\r: bad interpreter" — regardless of Windows autocrlf settings.
-*.sh        text eol=lf
-start_dev   text eol=lf
-*.service   text eol=lf
-*.rules     text eol=lf
-*.yml       text eol=lf
-*.yaml      text eol=lf
+# Every text file is stored and checked out with LF line endings, on every
+# OS. The Pi runs these scripts and units directly: a CRLF shebang fails with
+# "env: 'bash\r': No such file or directory", and systemd rejects CR in units.
+* text=auto eol=lf
 
 # Windows launchers keep CRLF.
 *.cmd       text eol=crlf
@@ -14,4 +10,6 @@ start_dev   text eol=lf
 # Binary assets.
 *.ttf       binary
 *.png       binary
+*.ico       binary
 *.sqlite    binary
+*.dbc       text eol=lf
