@@ -169,6 +169,9 @@ systemctl enable -q hud-server can0
 # `hud-update` from anywhere; passwordless for the service user so
 # `ssh hud sudo hud-update` from the PC never stops at a password prompt.
 ln -sf "$HUD_DIR/deploy/update.sh" /usr/local/bin/hud-update
+# `hud-view`: the HUD as text in a terminal (handy over ssh)
+chmod +x "$HUD_DIR/deploy/hud-view.sh"
+ln -sf "$HUD_DIR/deploy/hud-view.sh" /usr/local/bin/hud-view
 {
     echo "$HUD_USER ALL=(root) NOPASSWD: $HUD_DIR/deploy/update.sh, /usr/local/bin/hud-update"
     echo "$HUD_USER ALL=(root) NOPASSWD: /bin/systemctl restart hud-server, /bin/systemctl status hud-server"
