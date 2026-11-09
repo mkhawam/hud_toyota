@@ -1,9 +1,9 @@
 """Trip computer: distance, moving time, fuel, economy, 0-60 timer.
 
 Integrates the vehicle stream between message timestamps (trapezoid rule):
-distance from speed, fuel from MAF via the stoichiometric ratio
-(gasoline: fuel g/s = MAF/14.7, /737 g/L → L/s). Good to a few percent —
-honest enough for a dash economy readout.
+distance from speed; fuel from the ECU's own fuel rate (PID 0x5E, L/h) when
+the car reports it, else from MAF via the stoichiometric ratio (gasoline:
+fuel g/s = MAF/14.7, /737 g/L → L/s, good to a few percent).
 
 State survives restarts via cache/trip.json (best-effort, like the weather
 cache); the trip auto-resets after `providers.trip.reset_hours` parked, and
@@ -41,6 +41,27 @@ class TripState:
     _maf_ts: float | None = field(default=None, repr=False)
     _maf: float = field(default=0.0, repr=False)
     _instant_lp100k: float | None = field(default=None, repr=False)
+    _rate_ts: float | None = field(default=None, repr=False)
+    _rate: float = field(default=0.0, repr=False)
+
+    def _integrate_lph(self, dt: float, avg_lph: float, now_lph: float) -> None:
+        self.fuel_l += avg_lph / 3600 * dt
+        # smoothed instantaneous economy (needs to be moving)
+        if self._speed > 5:
+            inst = now_lph / self._speed * 100
+            alpha = min(1.0, dt / INSTANT_TAU_S)
+            prev = self._instant_lp100k if self._instant_lp100k is not None else inst
+            self._instant_lp100k = prev + alpha * (inst - prev)
+        else:
+            self._instant_lp100k = None
+
+    def on_fuel_rate(self, ts: float, lph: float) -> None:
+        if self._rate_ts is not None:
+            dt = ts - self._rate_ts
+            if 0 < dt < MAX_GAP_S:
+                self._integrate_lph(dt, (lph + self._rate) / 2, lph)
+        self._rate_ts, self._rate = ts, lph
+        self.last_ts = ts
 
     def on_speed(self, ts: float, kph: float) -> None:
         if self._speed_ts is not None:
@@ -54,20 +75,12 @@ class TripState:
         self.last_ts = ts
 
     def on_maf(self, ts: float, gs: float) -> None:
-        if self._maf_ts is not None:
+        rate_live = self._rate_ts is not None and ts - self._rate_ts < MAX_GAP_S
+        if self._maf_ts is not None and not rate_live:  # ECU fuel rate wins
             dt = ts - self._maf_ts
             if 0 < dt < MAX_GAP_S:
-                avg_gs = (gs + self._maf) / 2
-                self.fuel_l += avg_gs / STOICH_AFR / GASOLINE_G_PER_L * dt
-                # smoothed instantaneous economy (needs to be moving)
-                if self._speed > 5:
-                    lph = gs / STOICH_AFR / GASOLINE_G_PER_L * 3600
-                    inst = lph / self._speed * 100
-                    alpha = min(1.0, dt / INSTANT_TAU_S)
-                    prev = self._instant_lp100k if self._instant_lp100k is not None else inst
-                    self._instant_lp100k = prev + alpha * (inst - prev)
-                else:
-                    self._instant_lp100k = None
+                to_lph = 3600 / STOICH_AFR / GASOLINE_G_PER_L
+                self._integrate_lph(dt, (gs + self._maf) / 2 * to_lph, gs * to_lph)
         self._maf_ts, self._maf = ts, gs
         self.last_ts = ts
 
@@ -148,7 +161,9 @@ class TripProvider(DataProvider):
         last_pub = 0.0
         last_save = 0.0
 
-        sub = self.bus.subscribe("vehicle.speed_kph", "vehicle.maf_gs", "trip.reset")
+        sub = self.bus.subscribe(
+            "vehicle.speed_kph", "vehicle.maf_gs", "vehicle.fuel_rate_lph", "trip.reset"
+        )
         try:
             async for msg in sub:
                 if msg.topic == "trip.reset":
@@ -168,6 +183,8 @@ class TripProvider(DataProvider):
                         self._save(state, zs)
                 elif msg.topic == "vehicle.maf_gs":
                     state.on_maf(msg.ts, float(msg.value))
+                elif msg.topic == "vehicle.fuel_rate_lph":
+                    state.on_fuel_rate(msg.ts, float(msg.value))
 
                 if msg.ts - last_pub >= 1.0:
                     last_pub = msg.ts

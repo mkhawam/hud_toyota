@@ -118,6 +118,14 @@ def render(snap: dict[str, Any], cfg: dict[str, Any], width: int, color: bool,
     rcol = RED if isinstance(rpm, (int, float)) and rpm > 5800 else CYAN
     lines.append(f"RPM  {c(rcol, bar(rpm, RPM_MAX, bw))} {num(rpm)}")
     lines.append(f"THR  {c(DIM, bar(v('throttle_pct'), 100, bw))} {num(v('throttle_pct'), unit='%')}")
+    kw = v("power_kw")
+    if isinstance(kw, (int, float)):
+        half = bw // 2
+        regen = bar(-kw, 50, half)[::-1] if kw < 0 else "░" * half
+        drive = bar(kw, 150, bw - half) if kw > 0 else "░" * (bw - half)
+        soc = v("hv_battery_pct")
+        lines.append(f"PWR  {c(GREEN, regen)}│{c(CYAN, drive)} {kw:+.1f} kW"
+                     + (f"  HV {soc:.0f}%" if isinstance(soc, (int, float)) else ""))
     lines.append("")
 
     fuel = v("fuel_pct")
@@ -136,6 +144,10 @@ def render(snap: dict[str, Any], cfg: dict[str, Any], width: int, color: bool,
             plain = f"{k}: {val}"
             row += c(DIM, k + ":") + " " + val + " " * max(1, col - len(plain))
         lines.append(row.rstrip())
+
+    odo = v("odometer_km")
+    if isinstance(odo, (int, float)):
+        lines.append(c(DIM, "Odometer:") + (f" {odo / 1.609344:,.0f} mi" if mph else f" {odo:,.0f} km"))
 
     dist = snap.get("trip.distance_km")
     secs = snap.get("trip.time_s")

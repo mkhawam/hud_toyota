@@ -110,3 +110,67 @@ def test_uds_value_scaling_and_clamp():
     assert uds_value({"bytes": 1, "offset": -40}, b"\x5a") == 50.0
     assert uds_value({"bytes": 2, "scale": 0.01, "percent_of": 50}, b"\x17\x70") == 100.0
     assert uds_value({"bytes": 2}, b"\x01") is None
+
+
+# ---- hybrid / odometer PIDs (captured on the 2025 Camry) -------------------
+
+
+def test_decode_hybrid_battery_soc():
+    assert decode("hv_battery_pct", b"\x9a") == pytest.approx(60.39)
+
+
+def test_decode_odometer():
+    assert decode("odometer_km", bytes.fromhex("000B66E3")) == pytest.approx(74723.5)
+
+
+def test_decode_fuel_rate():
+    assert decode("fuel_rate_lph", b"\x00\x00") == 0.0
+    assert decode("fuel_rate_lph", b"\x00\x64") == 5.0
+
+
+def test_decode_hybrid_power_from_9a():
+    # FF 10 08 41 9A 0E 00 3F 00 + CF 21 00 1D: 252 V, +2.9 A → +0.73 kW
+    assert decode("power_kw", bytes.fromhex("0E003F00001D")) == pytest.approx(0.73, abs=0.01)
+    # regen: −40.0 A at 252 V → −10.08 kW
+    assert decode("power_kw", bytes.fromhex("0E003F00FE70")) == pytest.approx(-10.08, abs=0.01)
+    # voltage/current not supported by this ECU
+    assert decode("power_kw", bytes.fromhex("01003F00001D")) is None
+
+
+class FakeMsg:
+    def __init__(self, arb, data):
+        self.arbitration_id, self.data = arb, bytes.fromhex(data)
+
+
+class FakeSock:
+    def __init__(self, frames):
+        self.frames, self.sent = list(frames), []
+
+    def recv(self, timeout=None):
+        return self.frames.pop(0) if self.frames else None
+
+    def send(self, msg):
+        self.sent.append(msg)
+
+
+class FakeCan:
+    class Message:
+        def __init__(self, arbitration_id, data, is_extended_id):
+            self.arbitration_id, self.data = arbitration_id, data
+
+
+def test_two_frame_reply_is_reassembled_with_flow_control():
+    from hud.core.bus import Bus
+    from hud.core.config import Config
+    from hud.providers.vehicle.canobd import CanObdVehicleSource
+
+    src = CanObdVehicleSource(Bus(), Config())
+    sock = FakeSock([
+        FakeMsg(0x7EB, "1008419A06003F00"),   # other ECU's first frame: ignored
+        FakeMsg(0x7EA, "1008419A0E003F00"),
+        FakeMsg(0x7EA, "21001D0000000000"),
+    ])
+    out = src._collect(sock, 0x9A, 1.0, want=0x7EA, can_mod=FakeCan)
+    assert out == [(0x7EA, bytes.fromhex("0E003F00001D"))]
+    assert sock.sent[0].arbitration_id == 0x7E2
+    assert sock.sent[0].data[0] == 0x30

@@ -33,7 +33,9 @@ from .elm327 import SLOW_CHANNELS, Elm327VehicleSource
 DTC_CHANNEL = "dtc_codes"
 ELM_COMPLEMENT = set(SLOW_CHANNELS) | {DTC_CHANNEL}
 # what the broadcast DBC mapping doesn't carry → polled over OBD meanwhile
-OBD_COMPLEMENT = set(OBD_CHANNELS) & (set(SLOW_CHANNELS) | {"fuel_pct", "battery_v"})
+OBD_COMPLEMENT = set(OBD_CHANNELS) & (
+    set(SLOW_CHANNELS) | {"fuel_pct", "battery_v", "power_kw", "hv_battery_pct", "fuel_rate_lph"}
+)
 
 CAN_FRESH_S = 3.0    # CAN counts as alive if it emitted this recently
 CHECK_PERIOD_S = 1.0

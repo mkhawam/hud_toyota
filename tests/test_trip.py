@@ -111,3 +111,15 @@ def test_load_missing_cache(tmp_path):
 
 def test_sixty_constant():
     assert SIXTY_MPH_KPH == pytest.approx(60 * 1.609344, abs=0.01)
+
+
+def test_ecu_fuel_rate_overrides_maf():
+    from hud.providers.trip import TripState
+
+    s = TripState()
+    for t in range(0, 11):
+        s.on_speed(float(t), 72.0)
+        s.on_fuel_rate(float(t), 3.6)      # 3.6 L/h → 1 mL/s
+        s.on_maf(float(t), 50.0)           # would be ~16 L/h — must be ignored
+    assert s.fuel_l == pytest.approx(0.01, rel=1e-6)
+    assert s.instant_lp100k == pytest.approx(5.0, rel=0.01)  # 3.6 L/h at 72 km/h

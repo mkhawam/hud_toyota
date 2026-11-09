@@ -66,5 +66,11 @@ Column {
         }
         GlowText { text: "kW"; size: 2.2 * Style.ch; tracking: 0.2; color: Style.dim; glowAmount: 0; anchors.baseline: value.baseline }
         GlowText { text: "PWR"; size: 1.8 * Style.ch; font.weight: Font.DemiBold; tracking: 0.2; color: Style.crit; opacity: 0.75; glowAmount: 0; anchors.baseline: value.baseline }
+        GlowText {   // hybrid battery state of charge
+            visible: Style.has(topics.vehicle_hv_battery_pct)
+            text: "HV " + Math.round(topics.vehicle_hv_battery_pct || 0) + "%"
+            size: 1.8 * Style.ch; font.weight: Font.DemiBold; tracking: 0.2
+            color: Style.dim; glowAmount: 0; anchors.baseline: value.baseline
+        }
     }
 }

@@ -10,10 +10,12 @@ Protocol (ISO 15765-4, 11-bit, 500 kbit/s): a single-frame request
 ``[02 01 PID ...]`` to the functional broadcast ID 0x7DF; each ECU that
 supports the PID answers on 0x7E8-0x7EF with ``[len 41 PID A B ...]``.
 Every PID polled here fits in one frame, so no ISO-TP flow control is
-needed. Requests are always functional: the 2025 Camry's gateway drops
+needed — except 0x9A (hybrid battery voltage/current, 6 data bytes), whose
+reply is a two-frame ISO-TP message: the flow control goes physically to
+the answering ECU (the gateway passes that). Requests are always functional: the 2025 Camry's gateway drops
 physically-addressed requests (0x7E0) from the OBD port.
 
-At connect it discovers which ECU supports which PID (Mode 01 PIDs 00/20/40
+At connect it discovers which ECU supports which PID (Mode 01 PIDs 00-C0
 bitmaps) and then takes each PID's value from one ECU — preferring the
 engine ECU (0x7E8) — stopping the wait as soon as that ECU has replied.
 
@@ -55,8 +57,19 @@ FAST_PERIOD_S = 0.1     # fast PIDs ~10 Hz
 SLOW_PERIOD_S = 2.0
 MAX_CONSECUTIVE_MISSES = 30  # ~3 s of silence on fast PIDs → link down
 
+def _hybrid_power_kw(d: bytes) -> float | None:
+    """PID 0x9A: A = support bits (0x02 voltage, 0x04 current), B = charge
+    state, C-D = HV battery volts x64, E-F = amps x10 (signed, + = discharge).
+    → kW out of the battery: + drive, − regen/charging."""
+    if (d[0] & 0x06) != 0x06:
+        return None
+    volts = (d[2] << 8 | d[3]) / 64
+    amps = int.from_bytes(d[4:6], "big", signed=True) / 10
+    return volts * amps / 1000
+
+
 # channel → (PID, decoder(data bytes A..))
-PIDS: dict[str, tuple[int, Callable[[bytes], float]]] = {
+PIDS: dict[str, tuple[int, Callable[[bytes], float | None]]] = {
     "speed_kph":     (0x0D, lambda d: float(d[0])),
     "rpm":           (0x0C, lambda d: (d[0] * 256 + d[1]) / 4),
     "throttle_pct":  (0x11, lambda d: d[0] * 100 / 255),
@@ -66,14 +79,19 @@ PIDS: dict[str, tuple[int, Callable[[bytes], float]]] = {
     "fuel_pct":      (0x2F, lambda d: d[0] * 100 / 255),
     "battery_v":     (0x42, lambda d: (d[0] * 256 + d[1]) / 1000),
     "ambient_c":     (0x46, lambda d: float(d[0] - 40)),
+    "power_kw":      (0x9A, _hybrid_power_kw),
+    "fuel_rate_lph": (0x5E, lambda d: (d[0] * 256 + d[1]) / 20),
+    "hv_battery_pct": (0x5B, lambda d: d[0] * 100 / 255),
+    "odometer_km":   (0xA6, lambda d: int.from_bytes(d[:4], "big") / 10),
 }
-PID_LEN = {0x0C: 2, 0x10: 2, 0x42: 2}  # data bytes; default 1
+PID_LEN = {0x0C: 2, 0x10: 2, 0x42: 2, 0x5E: 2, 0x9A: 6, 0xA6: 4}  # data bytes; default 1
 
-FAST_CHANNELS = ("speed_kph", "rpm", "throttle_pct", "maf_gs")
-SLOW_CHANNELS = ("coolant_c", "intake_temp_c", "fuel_pct", "battery_v", "ambient_c")
+FAST_CHANNELS = ("speed_kph", "rpm", "throttle_pct", "maf_gs", "power_kw", "fuel_rate_lph")
+SLOW_CHANNELS = ("coolant_c", "intake_temp_c", "fuel_pct", "battery_v", "ambient_c",
+                 "hv_battery_pct", "odometer_km")
 OBD_CHANNELS = frozenset(PIDS)
 
-SUPPORT_PIDS = (0x00, 0x20, 0x40)
+SUPPORT_PIDS = (0x00, 0x20, 0x40, 0x60, 0x80, 0xA0, 0xC0)  # 0x9A/0xA6 live up high
 UDS_TIMEOUT_S = 0.1
 
 
@@ -98,7 +116,8 @@ def decode(channel: str, payload: bytes) -> float | None:
     pid, fn = PIDS[channel]
     if len(payload) < PID_LEN.get(pid, 1):
         return None
-    return round(fn(payload), 2)
+    value = fn(payload)
+    return None if value is None else round(value, 2)
 
 
 def supported_from_bitmap(base: int, bitmap: bytes) -> set[int]:
@@ -224,21 +243,53 @@ class CanObdVehicleSource(VehicleSource):
     def _send(can_mod, sock, arb_id: int, pid: int) -> None:
         sock.send(can_mod.Message(arbitration_id=arb_id, data=request(pid), is_extended_id=False))
 
-    def _collect(self, sock, pid: int, timeout: float, want: int | None = None):
-        """Replies for ``pid`` until timeout (or the first from ``want``)."""
+    def _collect(self, sock, pid: int, timeout: float, want: int | None = None,
+                 can_mod=None):
+        """Replies for ``pid`` until timeout (or the first from ``want``).
+        A two-frame reply from ``want`` is reassembled (flow control sent to
+        ``want - 8``) when ``can_mod`` is given."""
         deadline = time.monotonic() + timeout
         out: list[tuple[int, bytes]] = []
         while (left := deadline - time.monotonic()) > 0:
             msg = sock.recv(timeout=left)
             if msg is None:
                 break
-            parsed = parse_reply(bytes(msg.data))
+            data = bytes(msg.data)
+            if (can_mod is not None and msg.arbitration_id == want and len(data) == 8
+                    and data[0] >> 4 == 1 and data[2] == 0x41 and data[3] == pid):
+                payload = self._reassemble(can_mod, sock, data, want, deadline)
+                if payload is not None:
+                    out.append((want, payload))
+                break
+            parsed = parse_reply(data)
             if parsed is None or parsed[0] != pid:
                 continue
             out.append((msg.arbitration_id, parsed[1]))
             if want is not None and msg.arbitration_id == want:
                 break
         return out
+
+    @staticmethod
+    def _reassemble(can_mod, sock, first: bytes, ecu: int, deadline: float) -> bytes | None:
+        total = (first[0] & 0x0F) << 8 | first[1]
+        buf = bytearray(first[2:8])
+        sock.send(can_mod.Message(arbitration_id=ecu - 8, data=bytes([0x30, 0, 0, 0, 0, 0, 0, 0]),
+                                  is_extended_id=False))
+        seq = 1
+        while len(buf) < total and (left := deadline - time.monotonic()) > 0:
+            msg = sock.recv(timeout=left)
+            if msg is None:
+                return None
+            data = bytes(msg.data)
+            if msg.arbitration_id != ecu or data[0] >> 4 != 2:
+                continue
+            if data[0] & 0x0F != seq & 0x0F:
+                return None
+            buf += data[1:8]
+            seq += 1
+        if len(buf) < total:
+            return None
+        return bytes(buf[2:total])  # strip 41 PID
 
     def _discover(self, can_mod, sock) -> dict[int, int]:
         support: dict[int, set[int]] = {}
@@ -307,7 +358,8 @@ class CanObdVehicleSource(VehicleSource):
                         pid = chans[ch]
                         ecu = plan[pid]
                         self._send(can_mod, sock, FUNCTIONAL_ID, pid)
-                        replies = self._collect(sock, pid, REPLY_TIMEOUT_S, want=ecu)
+                        replies = self._collect(sock, pid, REPLY_TIMEOUT_S, want=ecu,
+                                                can_mod=can_mod)
                         value = next((decode(ch, d) for r, d in replies if r == ecu), None)
                         if value is None:
                             if ch in FAST_CHANNELS:

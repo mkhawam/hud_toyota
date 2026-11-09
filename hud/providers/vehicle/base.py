@@ -44,6 +44,8 @@ CHANNELS = (
     "odometer_km",   # float: odometer (29-bit meter frame, speculative)
     "steer_deg",     # float: steering angle
     "power_kw",      # float: hybrid system power, negative = regen
+    "hv_battery_pct",  # float 0-100: hybrid battery state of charge
+    "fuel_rate_lph",   # float: engine fuel rate, L/h (trip economy input)
 )
 
 
