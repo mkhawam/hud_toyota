@@ -72,11 +72,12 @@ providers:
     db: data/speedlimits-nj.sqlite
     # defaults_mph: { residential: 25, motorway: 65 }  # override NJ statutory fallbacks
   vehicle:
-    source: sim     # sim | auto | can | elm327   (auto = CAN fast + ELM327 slow/fallback)
+    source: sim     # sim | auto | can | can-obd | elm327
+                    # (auto = CAN broadcast, else OBD-II polled over the CAN HAT, else ELM327)
     elm327:
       port: null    # null → autoscan; on the Pi the udev rule pins /dev/ttyOBD
     can:
-      channel: can0
+      channel: auto   # auto = whichever CAN interface the car answers on (can0/can1 swap at boot)
       dbc: dbc/toyota_2017_ref_pt.dbc
       # channel → DBC message/signal (opendbc toyota_2017_ref_pt names).
       # 0xB4 VSC1S03.SP1 = speed (0.01 km/h), 0x1C4 ENG1F07.NE1 = rpm.

@@ -26,6 +26,10 @@ def make_vehicle_source(source: str, bus: Bus, config: Config) -> DataProvider:
         from .providers.vehicle.canbus import CanVehicleSource
 
         return CanVehicleSource(bus, config)
+    if source == "can-obd":
+        from .providers.vehicle.canobd import CanObdVehicleSource
+
+        return CanObdVehicleSource(bus, config)
     if source == "auto":
         from .providers.vehicle.manager import AutoVehicleManager
 

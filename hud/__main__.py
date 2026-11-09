@@ -18,7 +18,7 @@ from .core.config import Config
 
 def main() -> None:
     parser = argparse.ArgumentParser(prog="hud")
-    parser.add_argument("--source", choices=["sim", "auto", "can", "elm327"],
+    parser.add_argument("--source", choices=["sim", "auto", "can", "can-obd", "elm327"],
                         help="vehicle data source (overrides config)")
     parser.add_argument("--config", help="path to hud.yaml")
     parser.add_argument("--port", type=int, help="settings web server port (overrides config)")

@@ -4,7 +4,7 @@ import { THEME_PRESETS } from "../core/theme";
 import { Group, Icon, NavRow, Page } from "./ui";
 
 interface Status {
-  source?: "can" | "elm327" | "none";
+  source?: "can" | "can-obd" | "elm327" | "none";
   ap?: { active: boolean; ssid?: string; password?: string; url: string };
   online?: boolean;
 }
@@ -63,7 +63,7 @@ export const Home: Component = () => {
   };
   const rules = () => ((c() as { alerts?: { rules?: unknown[] } }).alerts?.rules ?? []).length;
   const units = () => `${(c().units?.speed ?? "mph") === "mph" ? "mph" : "km/h"} · °${(c().units?.temp ?? "f").toUpperCase()}`;
-  const source = () => ({ can: "CAN bus", elm327: "OBD adapter", none: "No vehicle" })[status()?.source ?? "none"];
+  const source = () => ({ can: "CAN bus", "can-obd": "CAN bus (OBD)", elm327: "OBD adapter", none: "No vehicle" })[status()?.source ?? "none"];
 
   return (
     <Page title="Settings">

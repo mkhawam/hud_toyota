@@ -1,6 +1,7 @@
 """CAN bus vehicle source (SocketCAN + cantools).
 
-Passively listens on ``can0`` and decodes broadcast frames with a DBC
+Passively listens on ``can0`` (``channel: auto`` = every CAN interface,
+since dual-controller HATs swap can0/can1 between boots) and decodes broadcast frames with a DBC
 (vendored opendbc Toyota powertrain file, see dbc/). Which signal feeds
 which normalized channel is pure config — retargeting to another car or a
 corrected DBC never touches this code:
@@ -123,7 +124,9 @@ class CanVehicleSource(VehicleSource):
         import can  # deferred: python-can only present with the [vehicle] extra
 
         self.load_dbc()
-        channel = self.config.get("providers.vehicle.can.channel", "can0")
+        channel = self.config.get("providers.vehicle.can.channel", "auto")
+        if channel in (None, "auto"):
+            channel = ""  # SocketCAN: bind to all CAN interfaces
         loop = asyncio.get_running_loop()
         stop = threading.Event()
         error: list[BaseException] = []

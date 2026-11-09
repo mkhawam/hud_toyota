@@ -7,7 +7,8 @@ from hud.core.bus import Bus
 from hud.core.config import Config
 from hud.providers.vehicle.base import CHANNELS, VehicleSource
 from hud.providers.vehicle.canbus import CanVehicleSource
-from hud.providers.vehicle.manager import ELM_COMPLEMENT, AutoVehicleManager
+from hud.providers.vehicle.canobd import OBD_CHANNELS
+from hud.providers.vehicle.manager import ELM_COMPLEMENT, OBD_COMPLEMENT, AutoVehicleManager
 
 CAN_CONFIG = Config(
     data={
@@ -162,7 +163,8 @@ async def test_manager_prefers_can_and_fails_over():
     config = Config()
     can = FakeSource(bus, config, "vehicle-can")
     elm = FakeSource(bus, config, "vehicle-elm327")
-    mgr = AutoVehicleManager(bus, config, can=can, elm=elm)
+    obd = FakeSource(bus, config, "vehicle-canobd")
+    mgr = AutoVehicleManager(bus, config, can=can, elm=elm, obd=obd)
 
     sub = bus.subscribe("vehicle.source")
     mgr.start()
@@ -183,5 +185,36 @@ async def test_manager_prefers_can_and_fails_over():
         msg = await asyncio.wait_for(sub.__anext__(), timeout=6)
         assert msg.value == "elm327"
         assert elm.channels == set(CHANNELS)
+    finally:
+        await mgr.stop()
+
+
+async def test_manager_uses_obd_over_can_when_broadcast_is_gated():
+    """2025 Camry: no broadcast frames reach the OBD port, but OBD replies do."""
+    bus = Bus()
+    config = Config()
+    can = FakeSource(bus, config, "vehicle-can")
+    elm = FakeSource(bus, config, "vehicle-elm327")
+    obd = FakeSource(bus, config, "vehicle-canobd")
+    mgr = AutoVehicleManager(bus, config, can=can, elm=elm, obd=obd)
+
+    sub = bus.subscribe("vehicle.source")
+    mgr.start()
+    try:
+        msg = await asyncio.wait_for(sub.__anext__(), timeout=2)
+        assert msg.value == "none"
+
+        obd.last_emit_ts = time.time() + 100
+        msg = await asyncio.wait_for(sub.__anext__(), timeout=3)
+        assert msg.value == "can-obd"
+        assert obd.channels == set(OBD_CHANNELS)
+        assert elm.channels == {"dtc_codes"}  # ELM only adds what OBD-over-CAN can't
+
+        # broadcast appears → it wins; OBD shrinks to what broadcast lacks
+        can.last_emit_ts = time.time() + 100
+        msg = await asyncio.wait_for(sub.__anext__(), timeout=3)
+        assert msg.value == "can"
+        assert obd.channels == OBD_COMPLEMENT
+        assert "speed_kph" not in obd.channels
     finally:
         await mgr.stop()
