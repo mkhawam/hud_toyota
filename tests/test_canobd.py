@@ -11,6 +11,9 @@ from hud.providers.vehicle.canobd import (
     parse_reply,
     request,
     supported_from_bitmap,
+    parse_uds_reply,
+    uds_request,
+    uds_value,
 )
 
 
@@ -79,3 +82,31 @@ def test_can_interfaces_filters_type_and_up(tmp_path):
         (d / "statistics" / "rx_packets").write_text(rx + "\n")
     # can1 is down, wlan0 isn't CAN; the busy can2 (wired to the car) goes first
     assert can_interfaces(str(tmp_path)) == ["can2", "can0"]
+
+
+# ---- UDS DIDs (2025 Camry combination meter, 0x7C0 -> 0x7C8) ---------------
+
+FUEL = {"ecu": 0x7C0, "did": 0x1022, "bytes": 2, "scale": 0.01, "percent_of": 50.0}
+
+
+def test_uds_request_frame():
+    assert uds_request(0x1022) == bytes.fromhex("0322102200000000")
+
+
+def test_uds_parse_real_meter_reply():
+    # captured: 05 62 10 22 0E C4 -> 37.80 L in a 50 L tank
+    payload = parse_uds_reply(bytes.fromhex("056210220EC40000"), 0x1022)
+    assert payload == bytes.fromhex("0EC4")
+    assert uds_value(FUEL, payload) == pytest.approx(75.6)
+
+
+def test_uds_parse_rejects_other_did_and_negative():
+    assert parse_uds_reply(bytes.fromhex("0562102120EC4000"), 0x1022) is None
+    assert parse_uds_reply(bytes.fromhex("037F223100000000"), 0x1022) is None
+
+
+def test_uds_value_scaling_and_clamp():
+    assert uds_value({"bytes": 1, "scale": 0.1}, b"\x8d") == pytest.approx(14.1)
+    assert uds_value({"bytes": 1, "offset": -40}, b"\x5a") == 50.0
+    assert uds_value({"bytes": 2, "scale": 0.01, "percent_of": 50}, b"\x17\x70") == 100.0
+    assert uds_value({"bytes": 2}, b"\x01") is None

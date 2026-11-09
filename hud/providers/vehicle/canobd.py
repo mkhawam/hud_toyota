@@ -17,6 +17,18 @@ At connect it discovers which ECU supports which PID (Mode 01 PIDs 00/20/40
 bitmaps) and then takes each PID's value from one ECU — preferring the
 engine ECU (0x7E8) — stopping the wait as soon as that ECU has replied.
 
+Some values have no standard PID on a given car (the 2025 Camry offers no
+fuel level, PID 0x2F, on any ECU). Those come from manufacturer data
+identifiers (UDS service 0x22) read from a specific ECU, configured under
+``providers.vehicle.can.uds`` — e.g. fuel from the combination meter, which
+the gateway does let physical requests through to (0x7C0 → 0x7C8):
+
+    uds:
+      fuel_pct: { ecu: 0x7C0, did: 0x1022, scale: 0.01, percent_of: 50.0 }
+
+``value = raw (big-endian, ``bytes`` long) * scale + offset``, then optionally
+``* 100 / percent_of``. DIDs the ECU rejects at connect are dropped.
+
 ``channel: auto`` probes every CAN interface that is up — busiest first,
 so an unwired controller is tried last — and uses the first one an ECU
 answers on: MCP2515 HATs with two controllers probe in random order, so
@@ -62,6 +74,7 @@ SLOW_CHANNELS = ("coolant_c", "intake_temp_c", "fuel_pct", "battery_v", "ambient
 OBD_CHANNELS = frozenset(PIDS)
 
 SUPPORT_PIDS = (0x00, 0x20, 0x40)
+UDS_TIMEOUT_S = 0.1
 
 
 # ---- pure helpers (unit-tested) -------------------------------------------
@@ -107,6 +120,34 @@ def choose_ecus(support: dict[int, set[int]]) -> dict[int, int]:
     return plan
 
 
+def uds_request(did: int) -> bytes:
+    return bytes([0x03, 0x22, did >> 8, did & 0xFF, 0, 0, 0, 0])
+
+
+def parse_uds_reply(data: bytes, did: int) -> bytes | None:
+    """Single-frame positive 0x22 reply for ``did`` → data bytes, else None."""
+    if len(data) < 4:
+        return None
+    length = data[0]
+    if length & 0xF0 or length < 3 or length > len(data) - 1:
+        return None
+    if data[1] != 0x62 or (data[2] << 8 | data[3]) != did:
+        return None
+    return bytes(data[4 : 1 + length])
+
+
+def uds_value(spec: dict[str, Any], payload: bytes) -> float | None:
+    n = int(spec.get("bytes", 2))
+    if len(payload) < n:
+        return None
+    value = int.from_bytes(payload[:n], "big") * float(spec.get("scale", 1)) + float(
+        spec.get("offset", 0)
+    )
+    if spec.get("percent_of"):
+        value = min(100.0, value * 100 / float(spec["percent_of"]))
+    return round(value, 2)
+
+
 def can_interfaces(sys_net: str = "/sys/class/net") -> list[str]:
     """CAN interfaces (ARPHRD_CAN = 280) that are up, busiest (most frames
     received) first — probing an unwired controller leaves an unacked
@@ -141,17 +182,43 @@ class CanObdVehicleSource(VehicleSource):
         super().__init__(bus, config)
         self.channels: set[str] = set(channels)  # the manager narrows/widens this
         self.iface: str | None = None
+        self.uds: dict[str, dict[str, Any]] = {
+            ch: dict(spec)
+            for ch, spec in (self.config.get("providers.vehicle.can.uds", {}) or {}).items()
+        }
 
     # -- socket helpers (run in the worker thread) ------------------------
 
-    @staticmethod
-    def _open(can_mod, iface: str):
+    def _open(self, can_mod, iface: str):
+        filters = [{"can_id": RESP_LO, "can_mask": 0x7F8, "extended": False}]
+        for spec in self.uds.values():
+            filters.append({"can_id": int(spec["ecu"]) + 8, "can_mask": 0x7FF, "extended": False})
         return can_mod.interface.Bus(
             channel=iface,
             interface="socketcan",
-            can_filters=[{"can_id": RESP_LO, "can_mask": 0x7F8, "extended": False}],
+            can_filters=filters,
             receive_own_messages=False,
         )
+
+    def _read_did(self, can_mod, sock, ecu: int, did: int) -> bytes | None:
+        sock.send(can_mod.Message(arbitration_id=ecu, data=uds_request(did), is_extended_id=False))
+        deadline = time.monotonic() + UDS_TIMEOUT_S
+        while (left := deadline - time.monotonic()) > 0:
+            msg = sock.recv(timeout=left)
+            if msg is None:
+                return None
+            if msg.arbitration_id != ecu + 8:
+                continue
+            data = bytes(msg.data)
+            if len(data) >= 4 and data[1] == 0x7F and data[2] == 0x22:
+                if data[3] == 0x78:  # response pending
+                    deadline = time.monotonic() + 1.0
+                    continue
+                return None  # negative response
+            payload = parse_uds_reply(data, did)
+            if payload is not None:
+                return payload
+        return None
 
     @staticmethod
     def _send(can_mod, sock, arb_id: int, pid: int) -> None:
@@ -215,9 +282,16 @@ class CanObdVehicleSource(VehicleSource):
             try:
                 self.iface, sock, plan = self._connect(can_mod)
                 chans = {ch: PIDS[ch][0] for ch in PIDS if PIDS[ch][0] in plan}
+                uds = {}
+                for ch, spec in self.uds.items():
+                    ecu, did = int(spec["ecu"]), int(spec["did"])
+                    payload = self._read_did(can_mod, sock, ecu, did)
+                    if payload is not None and uds_value(spec, payload) is not None:
+                        uds[ch] = spec
+                        chans.pop(ch, None)  # the configured DID beats a PID
                 loop.call_soon_threadsafe(
                     self.bus.publish, "vehicle.can_obd",
-                    {"iface": self.iface, "channels": sorted(chans)},
+                    {"iface": self.iface, "channels": sorted(set(chans) | set(uds))},
                 )
                 misses = 0
                 next_slow = 0.0
@@ -225,7 +299,8 @@ class CanObdVehicleSource(VehicleSource):
                     start = time.monotonic()
                     active = self.channels
                     polls = [c for c in FAST_CHANNELS if c in active and c in chans]
-                    if start >= next_slow:
+                    slow = start >= next_slow
+                    if slow:
                         next_slow = start + SLOW_PERIOD_S
                         polls += [c for c in SLOW_CHANNELS if c in active and c in chans]
                     for ch in polls:
@@ -241,6 +316,16 @@ class CanObdVehicleSource(VehicleSource):
                         if ch in FAST_CHANNELS:
                             misses = 0
                         loop.call_soon_threadsafe(self.emit, ch, value)
+                    if slow:
+                        for ch, spec in uds.items():
+                            if ch in OBD_CHANNELS and ch not in active:
+                                continue  # the manager gave it to another source
+                            payload = self._read_did(
+                                can_mod, sock, int(spec["ecu"]), int(spec["did"])
+                            )
+                            value = uds_value(spec, payload) if payload is not None else None
+                            if value is not None:
+                                loop.call_soon_threadsafe(self.emit, ch, value)
                     if misses >= MAX_CONSECUTIVE_MISSES:
                         raise ConnectionError(f"OBD over {self.iface}: ECUs stopped answering")
                     stop.wait(max(0.0, FAST_PERIOD_S - (time.monotonic() - start)))

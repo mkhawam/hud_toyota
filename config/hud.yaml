@@ -78,6 +78,12 @@ providers:
       port: null    # null → autoscan; on the Pi the udev rule pins /dev/ttyOBD
     can:
       channel: auto   # auto = whichever CAN interface the car answers on (can0/can1 swap at boot)
+      # Values with no standard OBD PID, read as UDS data identifiers from one
+      # ECU (OBD-over-CAN path). 2025 Camry: fuel isn't offered as PID 0x2F,
+      # but the combination meter (0x7C0) reports litres x100 at DID 0x1022.
+      # value = raw * scale + offset; percent_of = tank size for a percentage.
+      uds:
+        fuel_pct: { ecu: 0x7C0, did: 0x1022, bytes: 2, scale: 0.01, percent_of: 50.0 }
       dbc: dbc/toyota_2017_ref_pt.dbc
       # channel → DBC message/signal (opendbc toyota_2017_ref_pt names).
       # 0xB4 VSC1S03.SP1 = speed (0.01 km/h), 0x1C4 ENG1F07.NE1 = rpm.
